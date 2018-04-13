@@ -15,35 +15,65 @@
 (def schema {:project/dependency {:db/valueType :db.type/ref
                                   :db/cardinality :db.cardinality/many}
              :namespace/project {:db/valueType :db.type/ref}
-             :event/namespace {:db/valueType :db.type/ref}})
+             :feature/namespace {:db/valueType :db.type/ref}
+             :feature/project {:db/valueType :db.type/ref}})
 
 (def db-conn (d/create-conn schema))
 
-(defn cljs-file-forms [f]
- (binding [reader/*alias-map* (-> (File. f) ana/parse-ns :ast :requires)]
-   (reader/read-string (str "[" (slurp f) "]"))))
+(defn cljs-file-data [^File f]
+  (let [{:keys [requires name]} (:ast (ana/parse-ns f))]
+    (binding [reader/*data-readers* tags/*cljs-data-readers*
+              reader/*alias-map* requires
+              *ns* name]
+      {:ns-name name
+       :alias-map requires
+       :source-forms (reader/read-string (str "[" (slurp f) "]"))})))
 
 (defn get-all-files [base-dir pred?]
   (with-open [childs (files/walk (files/as-path base-dir))]
     (->> (stream/stream-seq childs)
          (filter pred?)
-         (map (fn [p]
-                {:absolute-path (str p)
-                 :content (files/read-str p)}))
-         (into []))))
+         (mapv (fn [p] (File. (str p)))))))
+
+(defn re-frame-features [cljs-forms]
+  (let [form-feature (fn [form]
+                       (if (seq? form)
+                         (let [[sym arg1] form]
+                           (cond
+                             (#{"reg-event-fx" "reg-event-db"} (name sym))
+                             {:type :event
+                              :name arg1}
+                             
+                             (= "reg-sub" (name sym))
+                             {:type :subscription
+                              :name arg1}
+
+                             (= "reg-fx" (name sym))
+                             {:type :fx
+                              :name arg1}
+                             
+                             (= "reg-cofx" (name sym))
+                             {:type :cofx
+                              :name arg1}))))]
+    (keep form-feature cljs-forms)))
 
 (defn get-all-projects [base-dir]
   (->> (get-all-files base-dir #(str/ends-with? (str %) "project.clj"))
-       (map #(update % :content read-string))
+       (map (fn [f] {:absolute-path (.getAbsolutePath f)
+                     :content (read-string (files/read-str f))}))
        (map (fn [{:keys [absolute-path content] :as p}]
               (let [[_ project-name project-version & {:keys [dependencies]}] content
-                    project-folder (.getParent (File. absolute-path))]
+                    project-folder (.getParent (File. absolute-path))
+                    cljs-files (->> (get-all-files project-folder #(str/ends-with? (str %) ".cljs"))
+                                    (mapv cljs-file-data))]
                 {:project-folder project-folder
                  :project-name project-name
                  :project-version project-version
-                 :dependencies dependencies})))))
+                 :dependencies dependencies
+                 :cljs-files cljs-files})))))
 
-(defn all-projects-datoms [all-projects]
+(defn transact-projects [conn all-projects]
+  (println "--------- Transacting projects and dependencies ---------")
   (let [project-ids (->> all-projects
                          (mapcat (fn [{:keys [project-name dependencies]}]
                                    (conj (map (fn [[dname]] dname) dependencies)
@@ -65,22 +95,68 @@
                                            (mapcat (fn [[dp & _]]
                                                   [[:db/add (project-ids dp) :project/name (str dp)]
                                                    [:db/add pid :project/dependency (project-ids dp)]])
-                                                (:dependencies p))))))]
-    (concat project-datoms dependency-datoms)))
+                                                   (:dependencies p))))))]
+    (d/transact! conn (concat project-datoms dependency-datoms))))
+
+(defn get-project-by-name [db project-name]
+  (d/entity db (d/q '[:find ?pid .
+                      :in $ ?pname
+                      :where [?pid :project/name ?pname]]
+                    db
+                    project-name)))
+
+(defn transact-namespaces [conn all-projects]
+  (println "--------- Transacting namespaces ---------")
+  (let [db @conn]
+   (doseq [{:keys [project-name cljs-files]} all-projects
+           {:keys [ns-name source-forms]} cljs-files]
+     (d/transact! conn [[:db/add -1 :namespace/name (str ns-name)]
+                        [:db/add -1 :namespace/project (:db/id (get-project-by-name db (str project-name)))]]))))
+
+(defn get-namespace-by-name [db namespace-name]
+  (d/entity db (d/q '[:find ?nid .
+                      :in $ ?nname
+                      :where [?nid :namespace/name ?nname]]
+                    db
+                    namespace-name)))
+
+#_(transact-namespaces db-conn (get-all-projects "/home/jmonetta/my-projects/district0x"))
+#_(:project/name (get-project-by-name @db-conn "district0x/district-time"))
+
+(defn transact-re-frame-features [conn all-projects]
+  (println "--------- Transacting re frame features ---------")
+  (let [db @conn]
+   (doseq [{:keys [project-name cljs-files]} all-projects]
+     (let [pid (:db/id (get-project-by-name db (str project-name)))]
+       (println "Got project " project-name " with id " pid)
+       (doseq [{:keys [ns-name source-forms]} cljs-files]
+         (let [nid (:db/id (get-namespace-by-name db (str ns-name)))
+               rf-features (re-frame-features source-forms)]
+           (println "Got namespace " ns-name " with id " nid)
+           (doseq [{:keys [type name]} rf-features]
+             (println "Creating " type " " name)
+             (d/transact! conn [[:db/add -1 :feature/namespace nid]
+                                [:db/add -1 :feature/project pid]
+                                [:db/add -1 :feature/name name]
+                                [:db/add -1 :feature/type type]]))))))))
+
+#_(transact-re-frame-features db-conn (get-all-projects "/home/jmonetta/my-projects/district0x"))
 
 
 (defn re-index-all [base-dir]
   ;;(d/reset-conn! db-conn (d/empty-db))
-  (->> (get-all-projects base-dir)
-       all-projects-datoms
-       (d/transact! db-conn)))
+  (let [all-projects (get-all-projects base-dir)]
+    (transact-projects db-conn all-projects)
+    (transact-namespaces db-conn all-projects)
+    (transact-re-frame-features db-conn all-projects)))
 
 (defn db-edn []
   (pr-str @db-conn))
 
 (comment
 (re-index-all "/home/jmonetta/my-projects/district0x")
-  
+
+(d/pull @db-conn '[:project/name  {:project/dependency 6}] 3)
   (d/reset-conn! db-conn (d/empty-db))
 
   
