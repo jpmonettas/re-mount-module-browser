@@ -58,4 +58,9 @@
  (fn [db [_ pid]]
    (assoc db :selected-project-id pid)))
 
+(re-frame/reg-event-db
+ ::select-tab
+ (fn [db [_ tid]]
+   (assoc db :selected-tab-id tid)))
+
 

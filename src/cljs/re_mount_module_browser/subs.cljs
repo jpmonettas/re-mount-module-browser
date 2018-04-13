@@ -33,5 +33,34 @@
 (re-frame/reg-sub
  ::selected-project-id
  (fn [{:keys [:selected-project-id]} _]
-   selected-project-id)) 
+   selected-project-id))
+
+(re-frame/reg-sub
+ ::selected-tab-id
+ (fn [{:keys [:selected-tab-id]} _]
+   selected-tab-id))
+
+(re-frame/reg-sub
+ ::features
+ (fn [{:keys [:datascript/db :selected-project-id]} [_ type]]
+   (let [features (d/q '[:find ?fns ?fp ?fname
+                         :in $ ?ftype
+                         :where
+                         [?fid :feature/namespace ?fnsid]
+                         [?fnsid :namespace/name ?fns]
+                         [?fid :feature/project ?fpid]
+                         [?fpid :project/name ?fp]
+                         [?fid :feature/name ?fname]
+                         [?fid :feature/type ?ftype]]
+                       db
+                       type)]
+     (->> features
+          (map (fn [[fns fp fname]]
+                 {:feature/name fname
+                  :feature/namespace fns
+                  :feature/project fp}))
+          (group-by :feature/project)
+          (map (fn [[p features]]
+                 [p (group-by :feature/namespace features)]))
+          (into {}))))) 
 
