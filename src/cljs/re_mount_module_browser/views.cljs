@@ -20,16 +20,12 @@
 (defn dependency-explorer []
   (let [tree (re-frame/subscribe [::subs/dependency-tree])
         selected-project-id (re-frame/subscribe [::subs/selected-project-id])]
-    [:div {:style {:grid-column "body-col-start/body-col-end"
-                   :grid-row "body-row-start/body-row-end"}}
+    [:div.dependency-explorer
      [:h4 "Dependency explorer"]
      [all-projects
       :on-change #(re-frame/dispatch [::events/select-project %])
       :selected-id selected-project-id]
-     [:div {:style {:padding-top "30px"
-                    :width "1900px"
-                    :height "800px"
-                    :overflow :scroll}}
+     [:div.tree-panel 
       (when-let [t @tree]
         [flowgraph t
          :layout-width 15500
@@ -39,18 +35,14 @@
          :line-styles {:stroke-width 1
                        :stroke :orange}
          :render-fn (fn [n]
-                      [:div {:style {:border "1px solid black"
-                                     :padding "10px"
-                                     :border-radius "10px"
-                                     :font-size (if (:project/ours? n) "12px" "8px")}}
+                      [:div.node {}
                        (if (str/includes? (:project/name n) "/")
                          (let [[ns name] (str/split (:project/name n) #"/")]
                            [:div [:span {:style {:color "#999"}}(str ns "/")] [:b name]])
                          [:b (:project/name n)])])])]]))
 
 (defn header []
-  [:div {:style {:background-color :grey :padding 5
-                 :grid-column "menu-col-start/body-col-end"}}
+  [:div.header {}
    [:button.btn.btn-danger {:on-click #(re-frame/dispatch [::events/re-index-all])
                             :style {:margin-left 5}}
     "Re index all"]])
@@ -75,15 +67,10 @@
 
 (defn feature-explorer [type]
   (let [features @(re-frame/subscribe [::subs/features type])] 
-    [:div
+    [:div.feature-explorer {}
      (for [[p namespaces-map] features]
        ^{:key p}
-       [:div {:style {:border "1px solid #333"
-                      :margin-bottom 5
-                      :padding "0px 0px 5px 5px"
-                      :width 500
-                      :border-radius 10
-                      :background-color "#f9d5c0"}}
+       [:div.feature-bubble {}
         [:h4  (str p)]
         [:div
          (for [[n feats] namespaces-map]
@@ -114,10 +101,7 @@
           [:div [open-file-link path 0 path]])])]))
 
 (defn main-panel []
-  [:div {:style {:display :grid
-                 :grid-gap 10
-                 :grid-template-columns "[menu-col-start] 150px [body-col-start] 1700px [body-col-end]"
-                 :grid-template-rows "[header-row-start] 100px [body-row-start] 900 px [body-row-end]"}}
+  [:div.main-panel {}
    [header]
    [menu]
    (case @(re-frame/subscribe [::subs/selected-tab-id])
