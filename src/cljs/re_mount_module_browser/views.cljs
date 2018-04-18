@@ -51,8 +51,6 @@
 (defn header []
   [:div {:style {:background-color :grey :padding 5
                  :grid-column "menu-col-start/body-col-end"}}
-   [:button.btn.btn-warning {:on-click #(re-frame/dispatch [::events/reload-db])}
-    "Reload db"]
    [:button.btn.btn-danger {:on-click #(re-frame/dispatch [::events/re-index-all])
                             :style {:margin-left 5}}
     "Re index all"]])
@@ -70,6 +68,10 @@
            {:id :tab-effects :label "Effects"}
            {:id :tab-coeffects :label "CoEffects"}
            {:id :tab-smart :label "Smart Contracts"}]]))
+
+(defn open-file-link [path line child]
+  [:a {:href (str "/open-file?path=" path "&line=" line "#line-tag")
+       :target "_blank"} child])
 
 (defn feature-explorer [type]
   (let [features @(re-frame/subscribe [::subs/features type])] 
@@ -90,9 +92,26 @@
             [:h6 (str n)]
             [:div 
              (for [f feats]
-               (let [[ns name] (str/split (:feature/name f) #"/")]
+               (let [[ns name] (str/split (:feature/name f) #"/")
+                     line (:feature/line f)]
                  ^{:key (str f)}
-                 [:div [:span {:style {:color "#999"}}(str ns "/")] [:b name]]))]])]])]))
+                 [open-file-link
+                  (:namespace/path f)
+                  line
+                  [:div [:span {:style {:color "#999"}}(str ns "/")] [:b name]]]))]])]])]))
+
+
+
+(defn smart-contracts-explorer []
+  (let [smart-contracts @(re-frame/subscribe [::subs/smart-contracts])]
+    [:div {}
+     (for [[pname contracts] smart-contracts]
+       ^{:key pname}
+       [:div
+        [:h4 pname]
+        (for [{:keys [:smart-contract/path]} contracts]
+          ^{:key path}
+          [:div [open-file-link path 0 path]])])]))
 
 (defn main-panel []
   [:div {:style {:display :grid
@@ -107,4 +126,4 @@
      :tab-subscriptions [feature-explorer :subscription]
      :tab-effects [feature-explorer :fx]
      :tab-coeffects [feature-explorer :cofx]
-     :tab-smart [:div "Not implemented"])])
+     :tab-smart [smart-contracts-explorer])])

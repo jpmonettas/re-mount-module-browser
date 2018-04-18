@@ -4,6 +4,7 @@
             [clojure.string :as str]
             [clojure.tools.analyzer :as ann]
             [clojure.tools.reader :as reader]
+            [clojure.tools.reader.reader-types :as reader-types]
             [cljs.analyzer :as an]
             [cljs.analyzer.api :as ana]
             [clojure.edn :as edn]
@@ -16,7 +17,8 @@
                                   :db/cardinality :db.cardinality/many}
              :namespace/project {:db/valueType :db.type/ref}
              :feature/namespace {:db/valueType :db.type/ref}
-             :feature/project {:db/valueType :db.type/ref}})
+             :feature/project {:db/valueType :db.type/ref}
+             :smart-contract/project {:db/valueType :db.type/ref}})
 
 (def db-conn (d/create-conn schema))
 
@@ -26,8 +28,9 @@
               reader/*alias-map* requires
               *ns* name]
       {:ns-name name
+       :absolute-path (.getAbsolutePath f)
        :alias-map requires
-       :source-forms (reader/read-string (str "[" (slurp f) "]"))})))
+       :source-forms (reader/read {} (reader-types/indexing-push-back-reader (str "[" (slurp f) "]")))})))
 
 (defn get-all-files [base-dir pred?]
   (with-open [childs (files/walk (files/as-path base-dir))]
@@ -38,23 +41,28 @@
 (defn re-frame-features [cljs-forms]
   (let [form-feature (fn [form]
                        (if (seq? form)
-                         (let [[sym arg1] form]
+                         (let [[sym arg1] form
+                               {:keys [line]} (meta form)]
                            (cond
                              (#{"reg-event-fx" "reg-event-db"} (name sym))
                              {:type :event
-                              :name arg1}
+                              :name arg1
+                              :line line}
                              
                              (= "reg-sub" (name sym))
                              {:type :subscription
-                              :name arg1}
+                              :name arg1
+                              :line line}
 
                              (= "reg-fx" (name sym))
                              {:type :fx
-                              :name arg1}
+                              :name arg1
+                              :line line}
                              
                              (= "reg-cofx" (name sym))
                              {:type :cofx
-                              :name arg1}))))]
+                              :name arg1
+                              :line line}))))]
     (keep form-feature cljs-forms)))
 
 (defn get-all-projects [base-dir]
@@ -65,12 +73,16 @@
               (let [[_ project-name project-version & {:keys [dependencies]}] content
                     project-folder (.getParent (File. absolute-path))
                     cljs-files (->> (get-all-files project-folder #(str/ends-with? (str %) ".cljs"))
-                                    (mapv cljs-file-data))]
+                                    (mapv cljs-file-data))
+                    solidity-files (->> (get-all-files project-folder #(str/ends-with? (str %) ".sol"))
+                                        (map (fn [f] {:absolute-path (.getAbsolutePath f)
+                                                      :content (files/read-str f)})))]
                 {:project-folder project-folder
                  :project-name project-name
                  :project-version project-version
                  :dependencies dependencies
-                 :cljs-files cljs-files})))))
+                 :cljs-files cljs-files
+                 :solidity-files solidity-files})))))
 
 (defn transact-projects [conn all-projects]
   (println "--------- Transacting projects and dependencies ---------")
@@ -109,8 +121,9 @@
   (println "--------- Transacting namespaces ---------")
   (let [db @conn]
    (doseq [{:keys [project-name cljs-files]} all-projects
-           {:keys [ns-name source-forms]} cljs-files]
+           {:keys [ns-name absolute-path source-forms]} cljs-files]
      (d/transact! conn [[:db/add -1 :namespace/name (str ns-name)]
+                        [:db/add -1 :namespace/path absolute-path]
                         [:db/add -1 :namespace/project (:db/id (get-project-by-name db (str project-name)))]]))))
 
 (defn get-namespace-by-name [db namespace-name]
@@ -128,17 +141,24 @@
   (let [db @conn]
    (doseq [{:keys [project-name cljs-files]} all-projects]
      (let [pid (:db/id (get-project-by-name db (str project-name)))]
-       (println "Got project " project-name " with id " pid)
        (doseq [{:keys [ns-name source-forms]} cljs-files]
          (let [nid (:db/id (get-namespace-by-name db (str ns-name)))
                rf-features (re-frame-features source-forms)]
-           (println "Got namespace " ns-name " with id " nid)
-           (doseq [{:keys [type name]} rf-features]
-             (println "Creating " type " " name)
+           (doseq [{:keys [type name line]} rf-features]
              (d/transact! conn [[:db/add -1 :feature/namespace nid]
                                 [:db/add -1 :feature/project pid]
                                 [:db/add -1 :feature/name name]
+                                [:db/add -1 :feature/line line]
                                 [:db/add -1 :feature/type type]]))))))))
+
+(defn transact-solidity [conn all-projects]
+  (println "--------- Transacting solidity contracts ---------")
+  (let [db @conn]
+    (doseq [{:keys [project-name solidity-files]} all-projects]
+     (let [pid (:db/id (get-project-by-name db (str project-name)))]
+       (doseq [{:keys [absolute-path]} solidity-files]
+         (d/transact! conn [[:db/add -1 :smart-contract/path absolute-path]
+                            [:db/add -1 :smart-contract/project pid]]))))))
 
 #_(transact-re-frame-features db-conn (get-all-projects "/home/jmonetta/my-projects/district0x"))
 
@@ -148,19 +168,41 @@
   (let [all-projects (get-all-projects base-dir)]
     (transact-projects db-conn all-projects)
     (transact-namespaces db-conn all-projects)
-    (transact-re-frame-features db-conn all-projects)))
+    (transact-re-frame-features db-conn all-projects)
+    (transact-solidity db-conn all-projects)))
 
 (defn db-edn []
   (pr-str @db-conn))
 
 (comment
+  (d/q '[:find ?pid ?pname
+         :where
+         [?pid :project/name ?pname]]
+       @db-conn)
+  
+  (d/pull @db-conn '[:project/name
+                     #_{:namespace/_project [:namespace/name]}
+                     #_{:feature/_project [:feature/name :feature/type]}
+                     {:smart-contract/_project [:smart-contract/path]}
+                     #_{:project/dependency 6}]
+          10)
+
+  (d/q '[:find ?pid ?sid ?sname
+         :where
+         [?sid :smart-contract/project ?pid]
+         [?sid :smart-contract/path ?sname]
+         ]
+       @db-conn)
+  
 (re-index-all "/home/jmonetta/my-projects/district0x")
 
-(d/pull @db-conn '[:project/name  {:project/dependency 6}] 3)
   (d/reset-conn! db-conn (d/empty-db))
 
-  
-  (take 1 (get-all-projects "/home/jmonetta/my-projects/district0x"))
+  (def all-projects (get-all-projects "/home/jmonetta/my-projects/district0x"))
+  (keys (first all-projects))
+  (->> (get-all-projects "/home/jmonetta/my-projects/district0x")
+       (map :solidity-files)
+       (mapcat (fn [sf] (map :absolute-path sf))))
   (.getParent (File. (:absolute-path (first (get-all-projects "/home/jmonetta/my-projects/district0x")))))
 
   (d/q '[:find ?pid ?pname ?pversion
@@ -168,9 +210,10 @@
          [?pid :project/name ?pname]
          [?pid :project/version ?pversion]]
        @conn)
-  (:project/dependency (d/entity @db-conn 15))
-  (d/pull @db-conn '[:project/name {:project/dependency 6}] 10)
-  (pr-str @conn)
-
-  (d/pull @db-conn '[:project/name :project/dependency] 2)
+  
+  (-> (cljs-file-data (File. "/home/jmonetta/my-projects/district0x/name-bazaar/src/name_bazaar/ui/events.cljs"))
+    :source-forms
+    (nth 4)
+    meta
+    )
   )

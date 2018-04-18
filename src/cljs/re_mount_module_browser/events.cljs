@@ -10,10 +10,11 @@
 ;; (d/pull @db-conn '[:project/name {:project/dependency 6}] 2)
 ;; (d/pull @db-conn '[:project/name :project/dependency] 1)
 
-(re-frame/reg-event-db
+(re-frame/reg-event-fx
  ::initialize-db
  (fn [_ _]
-   db/default-db))
+   {:db db/default-db
+    :dispatch [::reload-db]}))
  
 (re-frame/reg-event-fx
  ::reload-db

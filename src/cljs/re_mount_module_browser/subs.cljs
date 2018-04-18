@@ -43,11 +43,13 @@
 (re-frame/reg-sub
  ::features
  (fn [{:keys [:datascript/db :selected-project-id]} [_ type]]
-   (let [features (d/q '[:find ?fns ?fp ?fname
+   (let [features (d/q '[:find ?fns ?fp ?fname ?fnspath ?fline
                          :in $ ?ftype
                          :where
                          [?fid :feature/namespace ?fnsid]
+                         [?fid :feature/line ?fline]
                          [?fnsid :namespace/name ?fns]
+                         [?fnsid :namespace/path ?fnspath]
                          [?fid :feature/project ?fpid]
                          [?fpid :project/name ?fp]
                          [?fid :feature/name ?fname]
@@ -55,12 +57,29 @@
                        db
                        type)]
      (->> features
-          (map (fn [[fns fp fname]]
+          (map (fn [[fns fp fname fnspath fline]]
                  {:feature/name fname
-                  :feature/namespace fns
+                  :namespace/path fnspath
+                  :feature/line fline
+                  :namespace/name fns
                   :feature/project fp}))
           (group-by :feature/project)
           (map (fn [[p features]]
-                 [p (group-by :feature/namespace features)]))
-          (into {}))))) 
+                 [p (group-by :namespace/name features)]))
+          (into {})))))
+
+(re-frame/reg-sub
+ ::smart-contracts
+ (fn [{:keys [:datascript/db]} _]
+   (let [contracts (d/q '[:find ?pid ?pname ?sid ?spath
+                          :where
+                          [?pid :project/name ?pname]
+                          [?sid :smart-contract/project ?pid]
+                          [?sid :smart-contract/path ?spath]]
+                        db)]
+     (->> contracts
+          (map (fn [[pid pname sid spath]]
+                 {:project/name pname
+                  :smart-contract/path spath}))
+          (group-by :project/name))))) 
 
