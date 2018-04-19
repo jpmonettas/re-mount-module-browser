@@ -1,10 +1,10 @@
 (defproject re-mount-module-browser "0.1.0-SNAPSHOT"
-  :dependencies [[org.clojure/clojure "1.8.0"]
-                 [org.clojure/clojurescript "1.9.908"]
+  :dependencies [[org.clojure/clojure "1.9.0"]
+                 [org.clojure/clojurescript "1.10.238"]
                  [reagent "0.7.0"]
                  [re-frame "0.10.5"]
                  [com.andrewmcveigh/cljs-time "0.5.0"]
-                 [org.clojure/core.async "0.2.391"]
+                 [org.clojure/core.async "0.4.474"]
                  [re-com "2.1.0"]
                  [compojure "1.5.0"]
                  [yogthos/config "0.8"]
@@ -12,7 +12,10 @@
                  [org.ajoberstar/ike.cljj "0.4.0"]
                  [datascript "0.16.4"]
                  [day8.re-frame/http-fx "0.1.6"]
-                 [reagent-flowgraph "0.1.1"]]
+                 [reagent-flowgraph "0.1.1"]
+                 [cljsjs/react "15.6.1-1"]
+                 [cljs-react-material-ui "0.2.48"]
+                 [cljsjs/react-dom "15.6.1-1"]]
 
   :plugins [[lein-cljsbuild "1.1.5"]]
 

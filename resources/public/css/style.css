@@ -17,44 +17,44 @@ div.tree-panel div.node {
     font-size: 12px;
 }
 
-div.header{
-    background-color: grey;
-    padding: 5px;
-    grid-column: menu-col-start/body-col-end;
-}
+/* div.header{ */
+/*     background-color: grey; */
+/*     padding: 5px; */
+/*     grid-column: menu-col-start/body-col-end; */
+/* } */
 
-div.feature-explorer {
-    display: grid;
-    grid-template-columns: auto auto auto auto;
-    grid-column-gap: 5px;
-}
+/* div.feature-explorer { */
+/*     display: grid; */
+/*     grid-template-columns: auto auto auto auto; */
+/*     grid-column-gap: 5px; */
+/* } */
 
-.feature-bubble {
-    border: 1px solid #333;
-    margin-bottom: 5px;
-    padding: 0px 0px 5px 5px;
-    width: auto;
-    border-radius: 10px;
-    background-color: #f9d5c0;
-}
+/* .feature-bubble { */
+/*     border: 1px solid #333; */
+/*     margin-bottom: 5px; */
+/*     padding: 0px 0px 5px 5px; */
+/*     width: auto; */
+/*     border-radius: 10px; */
+/*     background-color: #f9d5c0; */
+/* } */
 
-div.spec-explorer {
-    display: grid;
-    grid-template-columns: auto auto auto auto;
-    grid-column-gap: 5px; 
-}
+/* div.spec-explorer { */
+/*     display: grid; */
+/*     grid-template-columns: auto auto auto auto; */
+/*     grid-column-gap: 5px;  */
+/* } */
  
-.spec-bubble {
-    border: 1px solid #333;
-    margin-bottom: 5px;
-    padding: 0px 0px 5px 5px;
-    width: auto;
-    border-radius: 10px;
-    background-color: #f9d5c0;
-}
-div.main-panel {
-    display: grid;
-    grid-gap: 10px;
-    grid-template-columns: [menu-col-start] 150px [body-col-start] 1700px [body-col-end];
-    grid-template-rows: [header-row-start] 100px [body-row-start] 900 px [body-row-end];
-}
+/* .spec-bubble { */
+/*     border: 1px solid #333; */
+/*     margin-bottom: 5px; */
+/*     padding: 0px 0px 5px 5px; */
+/*     width: auto; */
+/*     border-radius: 10px; */
+/*     background-color: #f9d5c0; */
+/* } */
+/* div.main-panel { */
+/*     display: grid; */
+/*     grid-gap: 10px; */
+/*     grid-template-columns: [menu-col-start] 150px [body-col-start] 1700px [body-col-end]; */
+/*     grid-template-rows: [header-row-start] 100px [body-row-start] 900 px [body-row-end]; */
+/* } */
