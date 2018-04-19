@@ -13,7 +13,7 @@
                   (->> (slurp path)
                        (str/split-lines)
                        (map-indexed (fn [lnumber l]
-                                      (if (= lnumber line)
+                                      (if (= (inc lnumber) line)
                                         (str "<b id=\"line-tag\" style=\"background-color:yellow\">" l "</b>\n")
                                         (str l "\n"))))
                        (apply str))

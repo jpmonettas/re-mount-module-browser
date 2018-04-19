@@ -69,6 +69,34 @@
           (into {})))))
 
 (re-frame/reg-sub
+ ::specs
+ (fn [{:keys [:datascript/db]} _]
+   (let [specs (d/q '[:find ?sns ?sp ?sname ?snspath ?sline ?sform
+                      :where
+                      [?sid :spec/namespace ?snsid]
+                      [?sid :spec/line ?sline]
+                      [?sid :spec/project ?spid]
+                      [?sid :spec/form ?sform]
+                      [?sid :spec/name ?sname]
+                      [?snsid :namespace/name ?sns]
+                      [?snsid :namespace/path ?snspath]
+                      [?spid :project/name ?sp]]
+                    db)
+         ret (->> specs
+                  (map (fn [[sns sp sname snspath sline sform]]
+                         {:spec/name sname
+                          :namespace/path snspath
+                          :spec/line sline
+                          :spec/form sform
+                          :namespace/name sns
+                          :spec/project sp}))
+                  (group-by :spec/project)
+                  (map (fn [[p spcs]]
+                           [p (group-by :namespace/name spcs)]))
+                  (into {}))]
+     ret)))
+
+(re-frame/reg-sub
  ::smart-contracts
  (fn [{:keys [:datascript/db]} _]
    (let [contracts (d/q '[:find ?pid ?pname ?sid ?spath

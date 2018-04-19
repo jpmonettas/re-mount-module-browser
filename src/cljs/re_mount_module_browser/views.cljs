@@ -59,6 +59,7 @@
            {:id :tab-subscriptions :label "Subscriptions"}
            {:id :tab-effects :label "Effects"}
            {:id :tab-coeffects :label "CoEffects"}
+           {:id :tab-specs :label "Specs"}
            {:id :tab-smart :label "Smart Contracts"}]]))
 
 (defn open-file-link [path line child]
@@ -100,6 +101,28 @@
           ^{:key path}
           [:div [open-file-link path 0 path]])])]))
 
+(defn specs-explorer []
+  (let [all-specs @(re-frame/subscribe [::subs/specs type])] 
+    [:div.spec-explorer {} 
+     (for [[p namespaces-map] all-specs]
+       ^{:key p}
+       [:div.spec-bubble {} 
+        [:h4  (str p)]
+        [:div
+         (for [[n specs] namespaces-map]
+           ^{:key n} 
+           [:div 
+            [:h6 (str n)]
+            [:div 
+             (for [s specs]
+               (let [[ns name] (str/split (:spec/name s) #"/")
+                     line (:spec/line s)]
+                 ^{:key (str s)}
+                 [open-file-link
+                  (:namespace/path s)
+                  line
+                  [:div [:span {:style {:color "#999"}}(str ns "/")] [:b name]]]))]])]])]))
+
 (defn main-panel []
   [:div.main-panel {}
    [header]
@@ -110,4 +133,5 @@
      :tab-subscriptions [feature-explorer :subscription]
      :tab-effects [feature-explorer :fx]
      :tab-coeffects [feature-explorer :cofx]
+     :tab-specs [specs-explorer]
      :tab-smart [smart-contracts-explorer])])

@@ -18,6 +18,8 @@
              :namespace/project {:db/valueType :db.type/ref}
              :feature/namespace {:db/valueType :db.type/ref}
              :feature/project {:db/valueType :db.type/ref}
+             :spec/namespace {:db/valueType :db.type/ref}
+             :spec/project {:db/valueType :db.type/ref}
              :smart-contract/project {:db/valueType :db.type/ref}})
 
 (def db-conn (d/create-conn schema))
@@ -37,6 +39,19 @@
     (->> (stream/stream-seq childs)
          (filter pred?)
          (mapv (fn [p] (File. (str p)))))))
+
+(defn all-specs [{:keys [source-forms alias-map]}]
+  (->> source-forms
+       (keep (fn [form]
+               (when (seq? form)
+                 (let [[f s r & _] form]
+                   (when (and (namespace f)
+                              (or (= "cljs.spec.alpha" (namespace f))
+                                  (= 'cljs.spec.alpha (get alias-map (symbol (namespace f)))))
+                              (= (name f) "def"))
+                     {:name s
+                      :form r
+                      :line (-> form meta :line)})))))))
 
 (defn re-frame-features [cljs-forms]
   (let [form-feature (fn [form]
@@ -85,7 +100,7 @@
                  :solidity-files solidity-files})))))
 
 (defn transact-projects [conn all-projects]
-  (println "--------- Transacting projects and dependencies ---------")
+  (println "--------- Indexing projects and dependencies ---------")
   (let [project-ids (->> all-projects
                          (mapcat (fn [{:keys [project-name dependencies]}]
                                    (conj (map (fn [[dname]] dname) dependencies)
@@ -118,7 +133,7 @@
                     project-name)))
 
 (defn transact-namespaces [conn all-projects]
-  (println "--------- Transacting namespaces ---------")
+  (println "--------- Indexing namespaces ---------")
   (let [db @conn]
    (doseq [{:keys [project-name cljs-files]} all-projects
            {:keys [ns-name absolute-path source-forms]} cljs-files]
@@ -133,11 +148,8 @@
                     db
                     namespace-name)))
 
-#_(transact-namespaces db-conn (get-all-projects "/home/jmonetta/my-projects/district0x"))
-#_(:project/name (get-project-by-name @db-conn "district0x/district-time"))
-
 (defn transact-re-frame-features [conn all-projects]
-  (println "--------- Transacting re frame features ---------")
+  (println "--------- Indexing re frame features ---------")
   (let [db @conn]
    (doseq [{:keys [project-name cljs-files]} all-projects]
      (let [pid (:db/id (get-project-by-name db (str project-name)))]
@@ -151,8 +163,23 @@
                                 [:db/add -1 :feature/line line]
                                 [:db/add -1 :feature/type type]]))))))))
 
+(defn transact-specs [conn all-projects]
+  (println "--------- Indexing specs ---------")
+  (let [db @conn]
+   (doseq [{:keys [project-name cljs-files]} all-projects]
+     (let [pid (:db/id (get-project-by-name db (str project-name)))]
+       (doseq [{:keys [ns-name source-forms] :as cljs-data} cljs-files]
+         (let [nid (:db/id (get-namespace-by-name db (str ns-name)))
+               specs (all-specs cljs-data)]
+           (doseq [{:keys [name form line]} specs]
+             (d/transact! conn [[:db/add -1 :spec/namespace nid]
+                                [:db/add -1 :spec/project pid]
+                                [:db/add -1 :spec/name name]
+                                [:db/add -1 :spec/form form]
+                                [:db/add -1 :spec/line line]]))))))))
+
 (defn transact-solidity [conn all-projects]
-  (println "--------- Transacting solidity contracts ---------")
+  (println "--------- Indexing solidity contracts ---------")
   (let [db @conn]
     (doseq [{:keys [project-name solidity-files]} all-projects]
      (let [pid (:db/id (get-project-by-name db (str project-name)))]
@@ -160,16 +187,14 @@
          (d/transact! conn [[:db/add -1 :smart-contract/path absolute-path]
                             [:db/add -1 :smart-contract/project pid]]))))))
 
-#_(transact-re-frame-features db-conn (get-all-projects "/home/jmonetta/my-projects/district0x"))
-
-
 (defn re-index-all [base-dir]
   ;;(d/reset-conn! db-conn (d/empty-db))
   (let [all-projects (get-all-projects base-dir)]
     (transact-projects db-conn all-projects)
     (transact-namespaces db-conn all-projects)
     (transact-re-frame-features db-conn all-projects)
-    (transact-solidity db-conn all-projects)))
+    (transact-solidity db-conn all-projects)
+    (transact-specs db-conn all-projects)))
 
 (defn db-edn []
   (pr-str @db-conn))
@@ -190,8 +215,7 @@
   (d/q '[:find ?pid ?sid ?sname
          :where
          [?sid :smart-contract/project ?pid]
-         [?sid :smart-contract/path ?sname]
-         ]
+         [?sid :smart-contract/path ?sname]]
        @db-conn)
   
 (re-index-all "/home/jmonetta/my-projects/district0x")
@@ -216,4 +240,19 @@
     (nth 4)
     meta
     )
+
+  (specs (cljs-file-data (File. "/home/jmonetta/my-projects/district0x/name-bazaar/src/district0x/ui/interval_fx.cljs")))
+
+  (count (d/q '[:find ?sns ?sp ?sname ?snspath ?sline ?sform
+                :where
+                [?sid :spec/namespace ?snsid]
+                [?sid :spec/line ?sline]
+                [?sid :spec/project ?spid]
+                [?sid :spec/form ?sform]
+                [?sid :spec/name ?sname]
+                [?snsid :namespace/name ?sns]
+                [?snsid :namespace/path ?snspath]
+                [?spid :project/name ?sp]
+          ]
+        @db-conn))
   )
