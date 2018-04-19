@@ -13,6 +13,8 @@
             [datascript.core :as d])
   (:import [java.io File]))
 
+(def projects-folder (atom nil))
+
 (def schema {:project/dependency {:db/valueType :db.type/ref
                                   :db/cardinality :db.cardinality/many}
              :namespace/project {:db/valueType :db.type/ref}
@@ -187,14 +189,16 @@
          (d/transact! conn [[:db/add -1 :smart-contract/path absolute-path]
                             [:db/add -1 :smart-contract/project pid]]))))))
 
-(defn re-index-all [base-dir]
-  ;;(d/reset-conn! db-conn (d/empty-db))
-  (let [all-projects (get-all-projects base-dir)]
-    (transact-projects db-conn all-projects)
-    (transact-namespaces db-conn all-projects)
-    (transact-re-frame-features db-conn all-projects)
-    (transact-solidity db-conn all-projects)
-    (transact-specs db-conn all-projects)))
+(defn re-index-all
+  ([] (re-index-all nil))
+  ([folder]
+   (d/reset-conn! db-conn (d/empty-db))
+   (let [all-projects (get-all-projects (or folder @projects-folder))]
+     (transact-projects db-conn all-projects)
+     (transact-namespaces db-conn all-projects)
+     (transact-re-frame-features db-conn all-projects)
+     (transact-solidity db-conn all-projects)
+     (transact-specs db-conn all-projects))))
 
 (defn db-edn []
   (pr-str @db-conn))

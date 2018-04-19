@@ -1,7 +1,6 @@
 (ns re-mount-module-browser.events
   (:require [re-frame.core :as re-frame]
             [re-mount-module-browser.db :as db]
-            [day8.re-frame.tracing :refer-macros [fn-traced defn-traced]]
             [day8.re-frame.http-fx]
             [ajax.core :as ajax]
             [datascript.core :as d]))

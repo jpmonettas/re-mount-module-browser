@@ -32,12 +32,12 @@
      [:div.tree-panel 
       (when-let [t @tree]
         [flowgraph t
-          :layout-width 10500
-          :layout-height 500
+         :layout-width 10500
+         :layout-height 500
          :branch-fn :project/dependency
          :childs-fn :project/dependency
-         :line-styles {:stroke-width 1
-                       :stroke :orange}
+         :line-styles {:stroke-width 2
+                       :stroke (color :pink500)}
          :render-fn (fn [n]
                       [:div.node {}
                        (if (str/includes? (:project/name n) "/")
