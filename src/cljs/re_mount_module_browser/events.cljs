@@ -32,7 +32,7 @@
                  :uri             "http://localhost:3000/re-index-all"
                  :timeout         8000                                           ;; optional see API docs
                  :response-format (ajax/raw-response-format)  ;; IMPORTANT!: You must provide this.
-                 :on-success      [::everything-re-indexed]
+                 :on-success      [::reload-db]
                  :on-failure      [:bad-http-result]}}))
 
 

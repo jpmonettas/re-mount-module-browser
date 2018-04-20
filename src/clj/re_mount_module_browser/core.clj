@@ -192,7 +192,7 @@
 (defn re-index-all
   ([] (re-index-all nil))
   ([folder]
-   (d/reset-conn! db-conn (d/empty-db))
+   (d/reset-conn! db-conn (d/empty-db schema))
    (let [all-projects (get-all-projects (or folder @projects-folder))]
      (transact-projects db-conn all-projects)
      (transact-namespaces db-conn all-projects)
@@ -212,8 +212,8 @@
   (d/pull @db-conn '[:project/name
                      #_{:namespace/_project [:namespace/name]}
                      #_{:feature/_project [:feature/name :feature/type]}
-                     {:smart-contract/_project [:smart-contract/path]}
-                     #_{:project/dependency 6}]
+                     #_{:smart-contract/_project [:smart-contract/path]}
+                     {:project/dependency 6}]
           10)
 
   (d/q '[:find ?pid ?sid ?sname
