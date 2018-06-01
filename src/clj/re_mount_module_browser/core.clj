@@ -27,14 +27,16 @@
 (def db-conn (d/create-conn schema))
 
 (defn cljs-file-data [^File f]
-  (let [{:keys [requires name]} (:ast (ana/parse-ns f))]
-    (binding [reader/*data-readers* tags/*cljs-data-readers*
-              reader/*alias-map* requires
-              *ns* name]
-      {:ns-name name
-       :absolute-path (.getAbsolutePath f)
-       :alias-map requires
-       :source-forms (reader/read {} (reader-types/indexing-push-back-reader (str "[" (slurp f) "]")))})))
+  (try
+   (let [{:keys [requires name]} (:ast (ana/parse-ns f))]
+     (binding [reader/*data-readers* tags/*cljs-data-readers*
+               reader/*alias-map* requires
+               *ns* name]
+       {:ns-name name
+        :absolute-path (.getAbsolutePath f)
+        :alias-map requires
+        :source-forms (reader/read {} (reader-types/indexing-push-back-reader (str "[" (slurp f) "]")))}))
+   (catch Exception e nil)))
 
 (defn get-all-files [base-dir pred?]
   (with-open [childs (files/walk (files/as-path base-dir))]
@@ -91,7 +93,8 @@
                     project-folder (.getParent (File. absolute-path))
                     cljs-files (->> (get-all-files project-folder #(str/ends-with? (str %) ".cljs"))
                                     (mapv cljs-file-data))
-                    solidity-files (->> (get-all-files project-folder #(str/ends-with? (str %) ".sol"))
+                    solidity-files (->> #(str/ends-with? (str %) ".sol")
+                                        (get-all-files project-folder)
                                         (map (fn [f] {:absolute-path (.getAbsolutePath f)
                                                       :content (files/read-str f)})))]
                 {:project-folder project-folder
@@ -139,9 +142,10 @@
   (let [db @conn]
    (doseq [{:keys [project-name cljs-files]} all-projects
            {:keys [ns-name absolute-path source-forms]} cljs-files]
-     (d/transact! conn [[:db/add -1 :namespace/name (str ns-name)]
-                        [:db/add -1 :namespace/path absolute-path]
-                        [:db/add -1 :namespace/project (:db/id (get-project-by-name db (str project-name)))]]))))
+     (when ns-name
+      (d/transact! conn [[:db/add -1 :namespace/name (str ns-name)]
+                         [:db/add -1 :namespace/path absolute-path]
+                         [:db/add -1 :namespace/project (:db/id (get-project-by-name db (str project-name)))]])))))
 
 (defn get-namespace-by-name [db namespace-name]
   (d/entity db (d/q '[:find ?nid .
