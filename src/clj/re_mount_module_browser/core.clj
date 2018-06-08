@@ -1,17 +1,15 @@
 (ns re-mount-module-browser.core
-  (:require [ike.cljj.file :as files]
-            [ike.cljj.stream :as stream]
+  (:require [cljs.analyzer.api :as ana]
+            [cljs.tagged-literals :as tags]
+            [clojure.java.io :as io]
             [clojure.string :as str]
-            [clojure.tools.analyzer :as ann]
             [clojure.tools.reader :as reader]
             [clojure.tools.reader.reader-types :as reader-types]
-            [cljs.analyzer :as an]
-            [cljs.analyzer.api :as ana]
-            [clojure.edn :as edn]
-            [cljs.tagged-literals :as tags]
-            [cljs.js :as cljs]
-            [datascript.core :as d])
-  (:import [java.io File]))
+            [clojure.zip :as zip]
+            [datascript.core :as d]
+            [ike.cljj.file :as files]
+            [ike.cljj.stream :as stream])
+  (:import java.io.File))
 
 (def projects-folder (atom nil))
 
@@ -206,61 +204,3 @@
 
 (defn db-edn []
   (pr-str @db-conn))
-
-(comment
-  (d/q '[:find ?pid ?pname
-         :where
-         [?pid :project/name ?pname]]
-       @db-conn)
-  
-  (d/pull @db-conn '[:project/name
-                     #_{:namespace/_project [:namespace/name]}
-                     #_{:feature/_project [:feature/name :feature/type]}
-                     #_{:smart-contract/_project [:smart-contract/path]}
-                     {:project/dependency 6}]
-          10)
-
-  (d/q '[:find ?pid ?sid ?sname
-         :where
-         [?sid :smart-contract/project ?pid]
-         [?sid :smart-contract/path ?sname]]
-       @db-conn)
-  
-(re-index-all "/home/jmonetta/my-projects/district0x")
-
-  (d/reset-conn! db-conn (d/empty-db))
-
-  (def all-projects (get-all-projects "/home/jmonetta/my-projects/district0x"))
-  (keys (first all-projects))
-  (->> (get-all-projects "/home/jmonetta/my-projects/district0x")
-       (map :solidity-files)
-       (mapcat (fn [sf] (map :absolute-path sf))))
-  (.getParent (File. (:absolute-path (first (get-all-projects "/home/jmonetta/my-projects/district0x")))))
-
-  (d/q '[:find ?pid ?pname ?pversion
-         :where
-         [?pid :project/name ?pname]
-         [?pid :project/version ?pversion]]
-       @conn)
-  
-  (-> (cljs-file-data (File. "/home/jmonetta/my-projects/district0x/name-bazaar/src/name_bazaar/ui/events.cljs"))
-    :source-forms
-    (nth 4)
-    meta
-    )
-
-  (specs (cljs-file-data (File. "/home/jmonetta/my-projects/district0x/name-bazaar/src/district0x/ui/interval_fx.cljs")))
-
-  (count (d/q '[:find ?sns ?sp ?sname ?snspath ?sline ?sform
-                :where
-                [?sid :spec/namespace ?snsid]
-                [?sid :spec/line ?sline]
-                [?sid :spec/project ?spid]
-                [?sid :spec/form ?sform]
-                [?sid :spec/name ?sname]
-                [?snsid :namespace/name ?sns]
-                [?snsid :namespace/path ?snspath]
-                [?spid :project/name ?sp]
-          ]
-        @db-conn))
-  )

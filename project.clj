@@ -12,7 +12,9 @@
                  [org.ajoberstar/ike.cljj "0.4.0"]
                  [datascript "0.16.4"]
                  [day8.re-frame/http-fx "0.1.6"]
-                 [reagent-flowgraph "0.1.1"]
+                 [reagent-flowgraph "0.1.1" :exclusions [reagent
+                                                         cljsjs/react
+                                                         cljsjs/react-dom]]
                  [cljsjs/react "15.6.1-1"]
                  [cljs-react-material-ui "0.2.48"]
                  [cljsjs/react-dom "15.6.1-1"]]
@@ -35,7 +37,7 @@
    {:dependencies [[binaryage/devtools "0.9.4"]
                    [day8.re-frame/re-frame-10x "0.3.0"]
                    [day8.re-frame/tracing "0.5.0"]
-                   [figwheel-sidecar "0.5.13"]
+                   [figwheel-sidecar "0.5.13" :exclusions [org.clojure/tools.nrepl]]
                    [com.cemerick/piggieback "0.2.2"]]
 
     :plugins      [[lein-figwheel "0.5.13"]]}
