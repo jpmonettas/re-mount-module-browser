@@ -9,8 +9,10 @@
             [clojure.string :as str]
             [cljs-react-material-ui.core :refer [get-mui-theme color]]
             [cljs-react-material-ui.reagent :as ui]
-            [cljs-react-material-ui.icons :as ic]))  
-
+            [cljs-react-material-ui.icons :as ic]
+            cljsjs.d3
+            [dorothy.core :as dorothy]))       
+ 
 (defn all-projects [& {:keys [on-change selected-id]}]
   (let [all @(re-frame/subscribe [::subs/all-projects])]
     [:div
@@ -23,28 +25,90 @@
                        :primary-text name}])]]))
 
 (defn dependency-explorer []
-  (let [tree (re-frame/subscribe [::subs/dependency-tree])
-        selected-project-id @(re-frame/subscribe [::subs/selected-project-id])]
-    [:div.dependency-explorer {:style {:margin 10}}
-     [all-projects
-      :on-change #(re-frame/dispatch [::events/select-project %])
-      :selected-id selected-project-id]
-     [:div.tree-panel 
-      (when-let [t @tree]
-        [flowgraph t
-         :layout-width 10500
-         :layout-height 500
-         :branch-fn :project/dependency
-         :childs-fn :project/dependency
-         :line-styles {:stroke-width 2
-                       :stroke (color :pink500)}
-         :render-fn (fn [n]
-                      [:div.node {}
-                       (if (str/includes? (:project/name n) "/")
-                         (let [[ns name] (str/split (:project/name n) #"/")]
-                           [:div [:span {:style {:color "#999"}}(str ns "/")] [:b name]])
-                         [:b (:project/name n)])])])]]))
+  (let [edges (re-frame/subscribe [::subs/projecs-dependencies-edges])
+        selected-project-id (re-frame/subscribe [::subs/selected-project-id])
+        redraw-graph (fn []
+                       (let [eds @edges
+                             all-nodes (into #{} (mapcat identity eds))]
+                        (-> (.select js/d3 "#dependency-graph")
+                            (.graphviz)
+                            (.renderDot (dorothy/dot (dorothy/digraph (into eds
+                                                                            (map (fn [n] [n {:shape :box}]) all-nodes)) ))))))]
+    (r/create-class
+     {:component-did-mount redraw-graph
+      :component-did-update redraw-graph
+      :reagent-render (fn []
+                        [:div.dependency-explorer {:style {:margin 10}}
+                         [all-projects
+                          :on-change #(re-frame/dispatch [::events/select-project %])
+                          :selected-id @selected-project-id]
+                         [:div.tree-panel 
+                          [:div#dependency-graph]]])})))
 
+(defn namespace-explorer []
+  [:div "Comming Soon"]
+  #_(let [edges (re-frame/subscribe [::subs/projecs-dependencies-edges])
+        selected-project-id (re-frame/subscribe [::subs/selected-project-id])
+        redraw-graph (fn []
+                       (let [eds @edges
+                             all-nodes (into #{} (mapcat identity eds))]
+                        (-> (.select js/d3 "#dependency-graph")
+                            (.graphviz)
+                            (.renderDot (dorothy/dot (dorothy/digraph (into eds
+                                                                            (map (fn [n] [n {:shape :box}]) all-nodes)) ))))))]
+    (r/create-class
+     {:component-did-mount redraw-graph
+      :component-did-update redraw-graph
+      :reagent-render (fn []
+                        [:div.dependency-explorer {:style {:margin 10}}
+                         [all-projects
+                          :on-change #(re-frame/dispatch [::events/select-project %])
+                          :selected-id @selected-project-id]
+                         [:div.tree-panel 
+                          [:div#dependency-graph]]])})))
+
+;; (def t (d/pull @db-conn 
+;;                  '[:namespace/name :namespace/ours? {:mount.feature/_namespace [:mount.feature/name]} {:namespace/require 100}]
+;;                  226
+;;                  ))
+;;   (defn only-ours [tree]
+;;     (update tree :namespace/require (fn [deps]
+;;                                       (->> deps
+;;                                            (filter :namespace/ours?)
+;;                                            (map only-ours)))))
+;;   (only-ours t)
+
+;;   (defn state-tree [ns-tree]
+;;   (let [sub-states ()
+;;         node-mount-feats (-> ns-tree :mount.feature/_namespace)]
+;;     (if (not-empty node-mount-feats)
+;;       (map (fn [{:keys [:mount.feature/name]}
+;;                 {:state-name name
+;;                  :childs sub-states}])
+;;            node-mount-feats)))
+;;   )
+(defn mount-state-explorer []
+  [:div "Comming Soon"]
+  #_(let [edges (re-frame/subscribe [::subs/projecs-dependencies-edges])
+          selected-project-id (re-frame/subscribe [::subs/selected-project-id])
+          redraw-graph (fn []
+                         (let [eds @edges
+                               all-nodes (into #{} (mapcat identity eds))]
+                           (-> (.select js/d3 "#dependency-graph")
+                               (.graphviz)
+                               (.renderDot (dorothy/dot (dorothy/digraph (into eds
+                                                                               (map (fn [n] [n {:shape :box}]) all-nodes)) ))))))]
+      (r/create-class
+       {:component-did-mount redraw-graph
+        :component-did-update redraw-graph
+        :reagent-render (fn []
+                          [:div.dependency-explorer {:style {:margin 10}}
+                           [all-projects
+                            :on-change #(re-frame/dispatch [::events/select-project %])
+                            :selected-id @selected-project-id]
+                           [:div.tree-panel 
+                            [:div#dependency-graph]]])})))
+ 
 (defn header []
   [ui/app-bar
    {:title "Explorer"
@@ -88,20 +152,7 @@
             [:div 
              (for [f feats]
                ^{:key (str f)}
-               [link (:feature/name f) (:namespace/path f) (:feature/line f)])]])]])]))
-
-(defn smart-contracts-explorer []
-  (let [smart-contracts @(re-frame/subscribe [::subs/smart-contracts])]
-    [ui/grid-list {:cols 1 :cell-height "auto"}
-     (for [[pname contracts] smart-contracts]
-       ^{:key pname}
-       [ui/paper {:style {:padding 30 :margin 10}}
-        [:h4 {:style {:color (color :blueGrey600)}} pname]
-        [ui/grid-list {:cols 6 :cell-height "auto" :padding 10}
-         (for [{:keys [:smart-contract/path]} contracts]
-           ^{:key path}
-           [:div {}
-            [link (subs path (inc (str/last-index-of path "/"))) path 0]])]])]))
+               [link (:re-frame.feature/name f) (:namespace/path f) (:re-frame.feature/line f)])]])]])]))
 
 (defn specs-explorer []
   (let [all-specs @(re-frame/subscribe [::subs/specs type])] 
@@ -131,6 +182,14 @@
              :on-active #(re-frame/dispatch [::events/select-tab "tab-dependencies"])
              :value "tab-dependencies"}
      [dependency-explorer]]
+     [ui/tab {:label "Namespaces"
+              :on-active #(re-frame/dispatch [::events/select-tab "tab-namespaces"])
+              :value "tab-namespaces"}
+      [namespace-explorer]]
+     [ui/tab {:label "Mount State"
+              :on-active #(re-frame/dispatch [::events/select-tab "tab-mount"])
+              :value "tab-mount"}
+      [mount-state-explorer]]
     [ui/tab {:label "Events"
              :on-active #(re-frame/dispatch [::events/select-tab "tab-events"])
              :value "tab-events"}
@@ -150,11 +209,7 @@
     [ui/tab {:label "Specs"
              :on-active #(re-frame/dispatch [::events/select-tab "tab-specs"])
              :value "tab-specs"}
-     [specs-explorer]]
-    [ui/tab {:label "Smart Contracts"
-             :on-active #(re-frame/dispatch [::events/select-tab "tab-smart"])
-             :value "tab-smart"}
-     [smart-contracts-explorer]]]))
+     [specs-explorer]]]))
 
 (defn main-panel []
   [ui/mui-theme-provider

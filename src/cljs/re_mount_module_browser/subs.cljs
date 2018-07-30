@@ -8,12 +8,21 @@
                                           (filter :project/ours?)
                                           (map only-ours)))))
 
-(re-frame/reg-sub
- ::dependency-tree
- (fn [{:keys [:datascript/db :selected-project-id]} _]
+(defn dependency-tree [db selected-project-id]
    (when selected-project-id
      (let [tree (d/pull db '[:project/name :project/ours?  {:project/dependency 6}] selected-project-id)]
-      (only-ours tree)))))
+       (only-ours tree))))
+
+(re-frame/reg-sub
+ ::projecs-dependencies-edges
+ (fn [{:keys [:datascript/db :selected-project-id]} _]
+   (->> (dependency-tree db selected-project-id)
+        (tree-seq (comp not-empty :project/dependency) :project/dependency )
+        (mapcat (fn [{:keys [:project/name :project/dependency]}]
+                  (map (fn [d]
+                         [name (:project/name d)])
+                       dependency))) 
+        (into #{}))))
 
 (re-frame/reg-sub
  ::all-projects
@@ -46,24 +55,24 @@
    (let [features (d/q '[:find ?fns ?fp ?fname ?fnspath ?fline
                          :in $ ?ftype
                          :where
-                         [?fid :feature/namespace ?fnsid]
-                         [?fid :feature/line ?fline]
+                         [?fid :re-frame.feature/namespace ?fnsid]
+                         [?fid :re-frame.feature/line ?fline]
                          [?fnsid :namespace/name ?fns]
                          [?fnsid :namespace/path ?fnspath]
-                         [?fid :feature/project ?fpid]
+                         [?fid :re-frame.feature/project ?fpid]
                          [?fpid :project/name ?fp]
-                         [?fid :feature/name ?fname]
-                         [?fid :feature/type ?ftype]]
+                         [?fid :re-frame.feature/name ?fname]
+                         [?fid :re-frame.feature/type ?ftype]]
                        db
                        type)]
      (->> features
           (map (fn [[fns fp fname fnspath fline]]
-                 {:feature/name fname
+                 {:re-frame.feature/name fname
                   :namespace/path fnspath
-                  :feature/line fline
+                  :re-frame.feature/line fline
                   :namespace/name fns
-                  :feature/project fp}))
-          (group-by :feature/project)
+                  :re-frame.feature/project fp}))
+          (group-by :re-frame.feature/project)
           (map (fn [[p features]]
                  [p (group-by :namespace/name features)]))
           (into {})))))

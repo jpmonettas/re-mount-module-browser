@@ -1,6 +1,6 @@
 (defproject re-mount-module-browser "0.1.0-SNAPSHOT"
   :dependencies [[org.clojure/clojure "1.9.0"]
-                 [org.clojure/clojurescript "1.10.238"]
+                 [org.clojure/clojurescript "1.10.339"]
                  [reagent "0.7.0"]
                  [re-frame "0.10.5"]
                  [com.andrewmcveigh/cljs-time "0.5.0"]
@@ -17,7 +17,9 @@
                                                          cljsjs/react-dom]]
                  [cljsjs/react "15.6.1-1"]
                  [cljs-react-material-ui "0.2.48"]
-                 [cljsjs/react-dom "15.6.1-1"]]
+                 [cljsjs/react-dom "15.6.1-1"]
+                 [cljsjs/d3 "4.12.0-0"]
+                 [dorothy "0.0.7"]]
 
   :plugins [[lein-cljsbuild "1.1.5"]]
 

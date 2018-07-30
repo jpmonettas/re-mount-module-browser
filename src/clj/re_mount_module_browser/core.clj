@@ -16,8 +16,12 @@
 (def schema {:project/dependency {:db/valueType :db.type/ref
                                   :db/cardinality :db.cardinality/many}
              :namespace/project {:db/valueType :db.type/ref}
-             :feature/namespace {:db/valueType :db.type/ref}
-             :feature/project {:db/valueType :db.type/ref}
+             :namespace/require {:db/valueType :db.type/ref
+                                 :db/cardinality :db.cardinality/many}
+             :re-frame.feature/namespace {:db/valueType :db.type/ref}
+             :re-frame.feature/project {:db/valueType :db.type/ref}
+             :mount.feature/namespace {:db/valueType :db.type/ref}
+             :mount.feature/project {:db/valueType :db.type/ref}
              :spec/namespace {:db/valueType :db.type/ref}
              :spec/project {:db/valueType :db.type/ref}
              :smart-contract/project {:db/valueType :db.type/ref}})
@@ -26,7 +30,7 @@
 
 (defn cljs-file-data [^File f]
   (try
-   (let [{:keys [requires name]} (:ast (ana/parse-ns f))]
+   (let [{:keys [requires name] :as ast} (:ast (ana/parse-ns f))]
      (binding [reader/*data-readers* tags/*cljs-data-readers*
                reader/*alias-map* requires
                *ns* name]
@@ -47,7 +51,8 @@
        (keep (fn [form]
                (when (seq? form)
                  (let [[f s r & _] form]
-                   (when (and (namespace f)
+                   (when (and (symbol? f)
+                              (namespace f)
                               (or (= "cljs.spec.alpha" (namespace f))
                                   (= 'cljs.spec.alpha (get alias-map (symbol (namespace f)))))
                               (= (name f) "def"))
@@ -60,27 +65,42 @@
                        (if (seq? form)
                          (let [[sym arg1] form
                                {:keys [line]} (meta form)]
-                           (cond
-                             (#{"reg-event-fx" "reg-event-db"} (name sym))
-                             {:type :event
-                              :name arg1
-                              :line line}
+                           (when (symbol? sym)
+                            (cond
+                              (#{"reg-event-fx" "reg-event-db"} (name sym))
+                              {:type :event
+                               :name arg1
+                               :line line}
                              
-                             (= "reg-sub" (name sym))
-                             {:type :subscription
-                              :name arg1
-                              :line line}
+                              (= "reg-sub" (name sym))
+                              {:type :subscription
+                               :name arg1
+                               :line line}
 
-                             (= "reg-fx" (name sym))
-                             {:type :fx
-                              :name arg1
-                              :line line}
+                              (= "reg-fx" (name sym))
+                              {:type :fx
+                               :name arg1
+                               :line line}
                              
-                             (= "reg-cofx" (name sym))
-                             {:type :cofx
-                              :name arg1
-                              :line line}))))]
+                              (= "reg-cofx" (name sym))
+                              {:type :cofx
+                               :name arg1
+                               :line line})))))]
     (keep form-feature cljs-forms)))
+
+(defn mount-features [cljs-forms]
+  (let [form-feature (fn [form]
+                       (if (seq? form)
+                         (let [[sym arg1 arg2] form
+                               {:keys [line]} (meta form)]
+                           (when (symbol? sym)
+                            (cond
+                              (#{"defstate"} (name sym))
+                              {:type :defstate
+                               :name (str arg1)
+                               :line line})))))]
+    (keep form-feature cljs-forms)))
+
 
 (defn get-all-projects [base-dir]
   (->> (get-all-files base-dir #(str/ends-with? (str %) "project.clj"))
@@ -89,18 +109,13 @@
        (map (fn [{:keys [absolute-path content] :as p}]
               (let [[_ project-name project-version & {:keys [dependencies]}] content
                     project-folder (.getParent (File. absolute-path))
-                    cljs-files (->> (get-all-files project-folder #(str/ends-with? (str %) ".cljs"))
-                                    (mapv cljs-file-data))
-                    solidity-files (->> #(str/ends-with? (str %) ".sol")
-                                        (get-all-files project-folder)
-                                        (map (fn [f] {:absolute-path (.getAbsolutePath f)
-                                                      :content (files/read-str f)})))]
+                    cljs-files (->> (get-all-files project-folder #(re-find  #".*/src/.+cljs$" (str %)) #_(str/ends-with? (str %) ".cljs"))
+                                    (mapv cljs-file-data))]
                 {:project-folder project-folder
                  :project-name project-name
                  :project-version project-version
                  :dependencies dependencies
-                 :cljs-files cljs-files
-                 :solidity-files solidity-files})))))
+                 :cljs-files cljs-files})))))
 
 (defn transact-projects [conn all-projects]
   (println "--------- Indexing projects and dependencies ---------")
@@ -135,15 +150,36 @@
                     db
                     project-name)))
 
+
 (defn transact-namespaces [conn all-projects]
   (println "--------- Indexing namespaces ---------")
-  (let [db @conn]
-   (doseq [{:keys [project-name cljs-files]} all-projects
-           {:keys [ns-name absolute-path source-forms]} cljs-files]
-     (when ns-name
-      (d/transact! conn [[:db/add -1 :namespace/name (str ns-name)]
-                         [:db/add -1 :namespace/path absolute-path]
-                         [:db/add -1 :namespace/project (:db/id (get-project-by-name db (str project-name)))]])))))
+  (let [db @conn
+        requires (fn [alias-map] (->> alias-map vals (into #{})))]
+    (doseq [{:keys [project-name cljs-files]} all-projects]
+      ;; this first pass is to generate all the ns ids for names before starting so we
+      ;; don't depend on ns order processing for creating dependecies
+      (let [all-namespaces (->> cljs-files
+                                (mapcat (fn [{:keys [ns-name alias-map]}]
+                                          (into [ns-name] (requires alias-map))))
+                                (into #{}))
+            ns-ids-by-name (->> all-namespaces
+                                (reduce (fn [r n]
+                                          (assoc r n (d/tempid :db.part/user)))
+                                        {}))
+            all-ns-facts (->> cljs-files
+                              (mapcat (fn [{:keys [ns-name absolute-path source-forms alias-map]}]
+                                        (when ns-name
+                                         (let [required-facts (mapcat (fn [required-ns]
+                                                                        [[:db/add (ns-ids-by-name ns-name) :namespace/require (ns-ids-by-name required-ns)]
+                                                                         [:db/add (ns-ids-by-name required-ns) :namespace/name (str required-ns)]])
+                                                                      (requires alias-map))
+                                               ns-facts (into [[:db/add (ns-ids-by-name ns-name) :namespace/name (str ns-name)]
+                                                               [:db/add (ns-ids-by-name ns-name) :namespace/path absolute-path]
+                                                               [:db/add (ns-ids-by-name ns-name) :namespace/project (:db/id (get-project-by-name db (str project-name)))]
+                                                               [:db/add (ns-ids-by-name ns-name) :namespace/ours? true]]
+                                                              required-facts)]
+                                           ns-facts)))))]
+        (d/transact! conn all-ns-facts)))))
 
 (defn get-namespace-by-name [db namespace-name]
   (d/entity db (d/q '[:find ?nid .
@@ -161,11 +197,31 @@
          (let [nid (:db/id (get-namespace-by-name db (str ns-name)))
                rf-features (re-frame-features source-forms)]
            (doseq [{:keys [type name line]} rf-features]
-             (d/transact! conn [[:db/add -1 :feature/namespace nid]
-                                [:db/add -1 :feature/project pid]
-                                [:db/add -1 :feature/name name]
-                                [:db/add -1 :feature/line line]
-                                [:db/add -1 :feature/type type]]))))))))
+             (prn "Transactin features facts " [[:db/add -1 :re-frame.feature/namespace nid]
+                                                [:db/add -1 :re-frame.feature/project pid]
+                                                [:db/add -1 :re-frame.feature/name name]
+                                                [:db/add -1 :re-frame.feature/line line]
+                                                [:db/add -1 :re-frame.feature/type type]])
+             (d/transact! conn [[:db/add -1 :re-frame.feature/namespace nid]
+                                [:db/add -1 :re-frame.feature/project pid]
+                                [:db/add -1 :re-frame.feature/name name]
+                                [:db/add -1 :re-frame.feature/line line]
+                                [:db/add -1 :re-frame.feature/type type]]))))))))
+
+(defn transact-mount-features [conn all-projects]
+  (println "--------- Indexing mount features ---------")
+  (let [db @conn]
+   (doseq [{:keys [project-name cljs-files]} all-projects]
+     (let [pid (:db/id (get-project-by-name db (str project-name)))]
+       (doseq [{:keys [ns-name alias-map source-forms]} cljs-files]
+         (let [nid (:db/id (get-namespace-by-name db (str ns-name)))
+               features (mount-features source-forms)]
+           (doseq [{:keys [type name line]} features]
+             (d/transact! conn [[:db/add -1 :mount.feature/namespace nid]
+                                [:db/add -1 :mount.feature/project pid]
+                                [:db/add -1 :mount.feature/name name]
+                                [:db/add -1 :mount.feature/line line]
+                                [:db/add -1 :mount.feature/type type]]))))))))
 
 (defn transact-specs [conn all-projects]
   (println "--------- Indexing specs ---------")
@@ -182,15 +238,6 @@
                                 [:db/add -1 :spec/form form]
                                 [:db/add -1 :spec/line line]]))))))))
 
-(defn transact-solidity [conn all-projects]
-  (println "--------- Indexing solidity contracts ---------")
-  (let [db @conn]
-    (doseq [{:keys [project-name solidity-files]} all-projects]
-     (let [pid (:db/id (get-project-by-name db (str project-name)))]
-       (doseq [{:keys [absolute-path]} solidity-files]
-         (d/transact! conn [[:db/add -1 :smart-contract/path absolute-path]
-                            [:db/add -1 :smart-contract/project pid]]))))))
-
 (defn re-index-all
   ([] (re-index-all nil))
   ([folder]
@@ -199,7 +246,7 @@
      (transact-projects db-conn all-projects)
      (transact-namespaces db-conn all-projects)
      (transact-re-frame-features db-conn all-projects)
-     (transact-solidity db-conn all-projects)
+     (transact-mount-features db-conn all-projects)
      (transact-specs db-conn all-projects))))
 
 (defn db-edn []
