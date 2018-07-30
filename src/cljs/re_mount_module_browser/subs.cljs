@@ -2,16 +2,22 @@
   (:require [re-frame.core :as re-frame]
             [datascript.core :as d]))
 
-(defn only-ours [tree]
-  (update tree :project/dependency (fn [deps]
-                                     (->> deps
-                                          (filter :project/ours?)
-                                          (map only-ours)))))
+(defn only-ours [tree childs-key ours-fn]
+  (update tree childs-key (fn [deps]
+                            (->> deps
+                                 (filter ours-fn)
+                                 (map #(only-ours % childs-key ours-fn))))))
 
 (defn dependency-tree [db selected-project-id]
    (when selected-project-id
      (let [tree (d/pull db '[:project/name :project/ours?  {:project/dependency 6}] selected-project-id)]
-       (only-ours tree))))
+       (only-ours tree :project/dependency :project/ours?))))
+
+(defn namespaces-tree [db selected-namespace-id]
+  (when selected-namespace-id
+    (let [tree (d/pull db '[:namespace/name :namespace/ours? {:namespace/require 100}]
+                       selected-namespace-id)]
+      (only-ours tree :namespace/require :namespace/ours?))))
 
 (re-frame/reg-sub
  ::projecs-dependencies-edges
@@ -22,6 +28,17 @@
                   (map (fn [d]
                          [name (:project/name d)])
                        dependency))) 
+        (into #{}))))
+
+(re-frame/reg-sub
+ ::project-namespaces-edges
+ (fn [{:keys [:datascript/db :selected-namespace-id]} _]
+   (->> (namespaces-tree db selected-namespace-id)
+        (tree-seq (comp not-empty :namespace/require) :namespace/require)
+        (mapcat (fn [{:keys [:namespace/name :namespace/require]}]
+                  (map (fn [d]
+                         [name (:namespace/name d)])
+                       require))) 
         (into #{}))))
 
 (re-frame/reg-sub
@@ -40,9 +57,31 @@
     [])))
 
 (re-frame/reg-sub
+ ::all-project-namespaces
+ (fn [{:keys [:datascript/db :selected-project-id]} _]
+   (if db
+     (let [all-project-namespaces (d/q '[:find ?nid ?nname
+                                          :in $ ?pid
+                                          :where
+                                          [?nid :namespace/name ?nname]
+                                          [?nid :namespace/project ?pid]]
+                                        db
+                                        selected-project-id)]
+      (->> all-project-namespaces
+           (map (fn [[id name]]
+                  {:db/id id :namespace/name name}))
+           (sort-by :namespace/name)))
+    [])))
+
+(re-frame/reg-sub
  ::selected-project-id
  (fn [{:keys [:selected-project-id]} _]
    selected-project-id))
+
+(re-frame/reg-sub
+ ::selected-namespace-id
+ (fn [{:keys [:selected-namespace-id]} _]
+   selected-namespace-id))
 
 (re-frame/reg-sub
  ::selected-tab-id

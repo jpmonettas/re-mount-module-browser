@@ -17,9 +17,20 @@
   (let [all @(re-frame/subscribe [::subs/all-projects])]
     [:div
      [ui/select-field {:floating-label-text "Projects"
-                       :value selected-id
+                       :value (or selected-id (:db/id (first all)))
                        :on-change (fn [ev idx val] (on-change val))}
       (for [{:keys [:project/name :db/id]} all]
+        ^{:key id}
+        [ui/menu-item {:value id
+                       :primary-text name}])]]))
+
+(defn all-project-namespaces [& {:keys [on-change selected-id]}]
+  (let [all @(re-frame/subscribe [::subs/all-project-namespaces])]
+    [:div
+     [ui/select-field {:floating-label-text "Namespaces"
+                       :value (or selected-id (:db/id (first all)))
+                       :on-change (fn [ev idx val] (on-change val))}
+      (for [{:keys [:namespace/name :db/id]} all]
         ^{:key id}
         [ui/menu-item {:value id
                        :primary-text name}])]]))
@@ -27,15 +38,25 @@
 (defn dependency-explorer []
   (let [edges (re-frame/subscribe [::subs/projecs-dependencies-edges])
         selected-project-id (re-frame/subscribe [::subs/selected-project-id])
+        graphviz (atom nil)
         redraw-graph (fn []
                        (let [eds @edges
                              all-nodes (into #{} (mapcat identity eds))]
-                        (-> (.select js/d3 "#dependency-graph")
-                            (.graphviz)
-                            (.renderDot (dorothy/dot (dorothy/digraph (into eds
-                                                                            (map (fn [n] [n {:shape :box}]) all-nodes)) ))))))]
+                         (-> @graphviz
+                             (.renderDot (->> (map (fn [n] [n {:shape :rectangle :fontname :helvetica :fontsize 10}]) all-nodes)
+                                              (into eds)
+                                              dorothy/digraph
+                                              dorothy/dot)))))]
     (r/create-class
-     {:component-did-mount redraw-graph
+     {:component-did-mount (fn []
+                             (reset! graphviz (-> (.select js/d3 "#dependency-graph")
+                                                  .graphviz
+                                                  (.transition (fn []
+                                                                 (-> js/d3
+                                                                     (.transition "main")
+                                                                     (.ease (.-easeLinear js/d3))
+                                                                     (.duration 800))))))
+                             (redraw-graph))
       :component-did-update redraw-graph
       :reagent-render (fn []
                         [:div.dependency-explorer {:style {:margin 10}}
@@ -46,26 +67,39 @@
                           [:div#dependency-graph]]])})))
 
 (defn namespace-explorer []
-  [:div "Comming Soon"]
-  #_(let [edges (re-frame/subscribe [::subs/projecs-dependencies-edges])
+  (let [edges (re-frame/subscribe [::subs/project-namespaces-edges])
         selected-project-id (re-frame/subscribe [::subs/selected-project-id])
+        selected-namespace-id (re-frame/subscribe [::subs/selected-namespace-id])
+        graphviz (atom nil)
         redraw-graph (fn []
                        (let [eds @edges
                              all-nodes (into #{} (mapcat identity eds))]
-                        (-> (.select js/d3 "#dependency-graph")
-                            (.graphviz)
-                            (.renderDot (dorothy/dot (dorothy/digraph (into eds
-                                                                            (map (fn [n] [n {:shape :box}]) all-nodes)) ))))))]
+                         (-> @graphviz
+                             (.renderDot (->> (map (fn [n] [n {:shape :rectangle :fontname :helvetica :fontsize 10}]) all-nodes)
+                                              (into eds)
+                                              dorothy/digraph
+                                              dorothy/dot)))))]
     (r/create-class
-     {:component-did-mount redraw-graph
+     {:component-did-mount (fn []
+                             (reset! graphviz (-> (.select js/d3 "#namespaces-graph")
+                                                  .graphviz
+                                                  (.transition (fn []
+                                                                 (-> js/d3
+                                                                     (.transition "main")
+                                                                     (.ease (.-easeLinear js/d3))
+                                                                     (.duration 800))))))
+                             (redraw-graph))
       :component-did-update redraw-graph
       :reagent-render (fn []
                         [:div.dependency-explorer {:style {:margin 10}}
                          [all-projects
                           :on-change #(re-frame/dispatch [::events/select-project %])
                           :selected-id @selected-project-id]
+                         [all-project-namespaces
+                          :on-change #(re-frame/dispatch [::events/select-namespace %])
+                          :selected-id @selected-namespace-id]
                          [:div.tree-panel 
-                          [:div#dependency-graph]]])})))
+                          [:div#namespaces-graph]]])})))
 
 ;; (def t (d/pull @db-conn 
 ;;                  '[:namespace/name :namespace/ours? {:mount.feature/_namespace [:mount.feature/name]} {:namespace/require 100}]
@@ -89,25 +123,7 @@
 ;;   )
 (defn mount-state-explorer []
   [:div "Comming Soon"]
-  #_(let [edges (re-frame/subscribe [::subs/projecs-dependencies-edges])
-          selected-project-id (re-frame/subscribe [::subs/selected-project-id])
-          redraw-graph (fn []
-                         (let [eds @edges
-                               all-nodes (into #{} (mapcat identity eds))]
-                           (-> (.select js/d3 "#dependency-graph")
-                               (.graphviz)
-                               (.renderDot (dorothy/dot (dorothy/digraph (into eds
-                                                                               (map (fn [n] [n {:shape :box}]) all-nodes)) ))))))]
-      (r/create-class
-       {:component-did-mount redraw-graph
-        :component-did-update redraw-graph
-        :reagent-render (fn []
-                          [:div.dependency-explorer {:style {:margin 10}}
-                           [all-projects
-                            :on-change #(re-frame/dispatch [::events/select-project %])
-                            :selected-id @selected-project-id]
-                           [:div.tree-panel 
-                            [:div#dependency-graph]]])})))
+  )
  
 (defn header []
   [ui/app-bar
