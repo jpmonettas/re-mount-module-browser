@@ -75,8 +75,16 @@
                        (let [eds @edges
                              all-nodes (into #{} (mapcat identity eds))]
                          (-> @graphviz
-                             (.renderDot (->> (map (fn [n] [n {:shape :rectangle :fontname :helvetica :fontsize 10}]) all-nodes)
-                                              (into eds)
+                             (.renderDot (->> all-nodes
+                                              (map (fn [{:keys [:namespace/name :mount-state]}]
+                                                     [name (cond-> {:shape :rectangle
+                                                                     :fontname :helvetica
+                                                                     :fontsize 10}
+                                                              mount-state (assoc :shape :circle))]))
+                                              (into (map (fn [[n1 n2]]
+                                                           [(:namespace/name n1)
+                                                            (:namespace/name n2)])
+                                                         eds))
                                               dorothy/digraph
                                               dorothy/dot)))))]
     (r/create-class
@@ -101,30 +109,6 @@
                          [:div.tree-panel 
                           [:div#namespaces-graph]]])})))
 
-;; (def t (d/pull @db-conn 
-;;                  '[:namespace/name :namespace/ours? {:mount.feature/_namespace [:mount.feature/name]} {:namespace/require 100}]
-;;                  226
-;;                  ))
-;;   (defn only-ours [tree]
-;;     (update tree :namespace/require (fn [deps]
-;;                                       (->> deps
-;;                                            (filter :namespace/ours?)
-;;                                            (map only-ours)))))
-;;   (only-ours t)
-
-;;   (defn state-tree [ns-tree]
-;;   (let [sub-states ()
-;;         node-mount-feats (-> ns-tree :mount.feature/_namespace)]
-;;     (if (not-empty node-mount-feats)
-;;       (map (fn [{:keys [:mount.feature/name]}
-;;                 {:state-name name
-;;                  :childs sub-states}])
-;;            node-mount-feats)))
-;;   )
-(defn mount-state-explorer []
-  [:div "Comming Soon"]
-  )
- 
 (defn header []
   [ui/app-bar
    {:title "Explorer"
@@ -202,11 +186,7 @@
               :on-active #(re-frame/dispatch [::events/select-tab "tab-namespaces"])
               :value "tab-namespaces"}
       [namespace-explorer]]
-     [ui/tab {:label "Mount State"
-              :on-active #(re-frame/dispatch [::events/select-tab "tab-mount"])
-              :value "tab-mount"}
-      [mount-state-explorer]]
-    [ui/tab {:label "Events"
+     [ui/tab {:label "Events"
              :on-active #(re-frame/dispatch [::events/select-tab "tab-events"])
              :value "tab-events"}
      [feature-explorer :event]]

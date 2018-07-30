@@ -15,7 +15,7 @@
 
 (defn namespaces-tree [db selected-namespace-id]
   (when selected-namespace-id
-    (let [tree (d/pull db '[:namespace/name :namespace/ours? {:namespace/require 100}]
+    (let [tree (d/pull db '[:namespace/name :namespace/ours? {:mount.feature/_namespace [:mount.feature/name]} {:namespace/require 100}]
                        selected-namespace-id)]
       (only-ours tree :namespace/require :namespace/ours?))))
 
@@ -33,13 +33,16 @@
 (re-frame/reg-sub
  ::project-namespaces-edges
  (fn [{:keys [:datascript/db :selected-namespace-id]} _]
-   (->> (namespaces-tree db selected-namespace-id)
-        (tree-seq (comp not-empty :namespace/require) :namespace/require)
-        (mapcat (fn [{:keys [:namespace/name :namespace/require]}]
-                  (map (fn [d]
-                         [name (:namespace/name d)])
-                       require))) 
-        (into #{}))))
+   (let [edge-node (fn [node]
+                     {:namespace/name (:namespace/name node)
+                      :mount-state (:mount.feature/_namespace node)})]
+    (->> (namespaces-tree db selected-namespace-id)
+         (tree-seq (comp not-empty :namespace/require) :namespace/require)
+         (mapcat (fn [{:keys [:namespace/require] :as ns-node}]
+                   (map (fn [dep-node]
+                          [(edge-node ns-node) (edge-node dep-node)])
+                        require))) 
+         (into #{})))))
 
 (re-frame/reg-sub
  ::all-projects
