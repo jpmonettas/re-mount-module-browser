@@ -38,7 +38,9 @@
         :absolute-path (.getAbsolutePath f)
         :alias-map requires
         :source-forms (reader/read {} (reader-types/indexing-push-back-reader (str "[" (slurp f) "]")))}))
-   (catch Exception e nil)))
+   (catch Exception e
+     (println (format "ERROR whilre reading cljs file " (.getName f)))
+     (.printStackTrace e))))
 
 (defn get-all-files [base-dir pred?]
   (with-open [childs (files/walk (files/as-path base-dir))]
@@ -101,6 +103,12 @@
                                :line line})))))]
     (keep form-feature cljs-forms)))
 
+;; TODO Maybe we can add npm dependecise using
+;; (npm-deps/resolve-node-deps (lein-project/read "/home/jmonetta/my-projects/district0x/memefactory/project.clj"))
+;; Couldn't make it work with: 
+;;                                  [lein-npm "0.7.0-rc1"]
+;;                                  [leiningen-core "2.7.1"]
+;; See : https://github.com/technomancy/leiningen/issues/2348#issuecomment-409349137
 
 (defn get-all-projects [base-dir]
   (->> (get-all-files base-dir #(str/ends-with? (str %) "project.clj"))
@@ -197,11 +205,6 @@
          (let [nid (:db/id (get-namespace-by-name db (str ns-name)))
                rf-features (re-frame-features source-forms)]
            (doseq [{:keys [type name line]} rf-features]
-             (prn "Transactin features facts " [[:db/add -1 :re-frame.feature/namespace nid]
-                                                [:db/add -1 :re-frame.feature/project pid]
-                                                [:db/add -1 :re-frame.feature/name name]
-                                                [:db/add -1 :re-frame.feature/line line]
-                                                [:db/add -1 :re-frame.feature/type type]])
              (d/transact! conn [[:db/add -1 :re-frame.feature/namespace nid]
                                 [:db/add -1 :re-frame.feature/project pid]
                                 [:db/add -1 :re-frame.feature/name name]
@@ -226,17 +229,17 @@
 (defn transact-specs [conn all-projects]
   (println "--------- Indexing specs ---------")
   (let [db @conn]
-   (doseq [{:keys [project-name cljs-files]} all-projects]
-     (let [pid (:db/id (get-project-by-name db (str project-name)))]
-       (doseq [{:keys [ns-name source-forms] :as cljs-data} cljs-files]
-         (let [nid (:db/id (get-namespace-by-name db (str ns-name)))
-               specs (all-specs cljs-data)]
-           (doseq [{:keys [name form line]} specs]
-             (d/transact! conn [[:db/add -1 :spec/namespace nid]
-                                [:db/add -1 :spec/project pid]
-                                [:db/add -1 :spec/name name]
-                                [:db/add -1 :spec/form form]
-                                [:db/add -1 :spec/line line]]))))))))
+    (doseq [{:keys [project-name cljs-files]} all-projects]
+      (let [pid (:db/id (get-project-by-name db (str project-name)))]
+        (doseq [{:keys [ns-name source-forms] :as cljs-data} cljs-files]
+          (let [nid (:db/id (get-namespace-by-name db (str ns-name)))
+                specs (all-specs cljs-data)]
+            (doseq [{:keys [name form line]} specs]
+              (d/transact! conn [[:db/add -1 :spec/namespace nid]
+                                 [:db/add -1 :spec/project pid]
+                                 [:db/add -1 :spec/name name]
+                                 [:db/add -1 :spec/form form]
+                                 [:db/add -1 :spec/line line]]))))))))
 
 (defn re-index-all
   ([] (re-index-all nil))
