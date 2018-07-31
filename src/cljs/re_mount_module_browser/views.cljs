@@ -11,7 +11,8 @@
             [cljs-react-material-ui.reagent :as ui]
             [cljs-react-material-ui.icons :as ic]
             cljsjs.d3
-            [dorothy.core :as dorothy]))       
+            [dorothy.core :as dorothy]
+            [goog.string :as gstring]))       
  
 (defn all-projects [& {:keys [on-change selected-id]}]
   (let [all @(re-frame/subscribe [::subs/all-projects])]
@@ -78,9 +79,13 @@
                              (.renderDot (->> all-nodes
                                               (map (fn [{:keys [:namespace/name :mount-state]}]
                                                      [name (cond-> {:shape :rectangle
-                                                                     :fontname :helvetica
-                                                                     :fontsize 10}
-                                                              mount-state (assoc :shape :circle))]))
+                                                                    :fontname :helvetica
+                                                                    :fontsize 10}
+                                                             mount-state (assoc :shape :record
+                                                                                :label (gstring/format "{%s|State: %s\\l}"
+                                                                                                       (str name)
+                                                                                                       (:mount.feature/name (first mount-state)))
+                                                                                :color :red))]))
                                               (into (map (fn [[n1 n2]]
                                                            [(:namespace/name n1)
                                                             (:namespace/name n2)])
