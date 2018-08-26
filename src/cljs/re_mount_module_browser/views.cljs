@@ -180,6 +180,52 @@
                ^{:key (str s)}
                [link (:spec/name s) (:namespace/path s) (:spec/line s)])]])]])]))
 
+(defn mount-explorer [] 
+  (let [edges (re-frame/subscribe [::subs/mount-state-edges])
+        selected-project-id (re-frame/subscribe [::subs/selected-project-id])
+        selected-namespace-id (re-frame/subscribe [::subs/selected-namespace-id])
+        graphviz (atom nil)
+        redraw-graph (fn []
+                       (let [eds @edges
+                             all-nodes (into #{} (mapcat identity eds))]
+                         (-> @graphviz
+                             (.renderDot (->> all-nodes
+                                              (map (fn [{:keys [ns-name project-name state-name]}] 
+                                                     [state-name (cond-> {:fontname :helvetica
+                                                                          :fontsize 10
+                                                                          :shape :record
+                                                                          :label (gstring/format "{project: %s|ns: %s| %s\\l}"
+                                                                                                 project-name
+                                                                                                 ns-name
+                                                                                                 state-name)
+                                                                          :color :red})]))
+                                              (into (map (fn [[n1 n2]]
+                                                           [(:state-name n1) (:state-name n2)])
+                                                         eds))
+                                              dorothy/digraph
+                                              dorothy/dot)))))]
+    (r/create-class
+     {:component-did-mount (fn []
+                             (reset! graphviz (-> (.select js/d3 "#mount-graph")
+                                                  .graphviz
+                                                  (.transition (fn []
+                                                                 (-> js/d3
+                                                                     (.transition "main")
+                                                                     (.ease (.-easeLinear js/d3))
+                                                                     (.duration 800))))))
+                             (redraw-graph))
+      :component-did-update redraw-graph
+      :reagent-render (fn []
+                        [:div.dependency-explorer {:style {:margin 10}}
+                         [all-projects
+                          :on-change #(re-frame/dispatch [::events/select-project %])
+                          :selected-id @selected-project-id]
+                         [all-project-namespaces
+                          :on-change #(re-frame/dispatch [::events/select-namespace %])
+                          :selected-id @selected-namespace-id]
+                         [:div.tree-panel 
+                          [:div#mount-graph]]])})))
+
 (defn tabs []
   (let [selected-tab @(re-frame/subscribe [::subs/selected-tab-id])]
     [ui/tabs {:value selected-tab} 
@@ -191,6 +237,10 @@
               :on-active #(re-frame/dispatch [::events/select-tab "tab-namespaces"])
               :value "tab-namespaces"}
       [namespace-explorer]]
+     [ui/tab {:label "Mount States"
+              :on-active #(re-frame/dispatch [::events/select-tab "tab-mount-states"])
+              :value "tab-mount-states"}
+      [mount-explorer]]
      [ui/tab {:label "Events"
              :on-active #(re-frame/dispatch [::events/select-tab "tab-events"])
              :value "tab-events"}

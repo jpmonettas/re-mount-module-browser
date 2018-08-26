@@ -13,11 +13,34 @@
      (let [tree (d/pull db '[:project/name :project/ours?  {:project/dependency 6}] selected-project-id)]
        (only-ours tree :project/dependency :project/ours?))))
 
+
 (defn namespaces-tree [db selected-namespace-id]
   (when selected-namespace-id
-    (let [tree (d/pull db '[:namespace/name :namespace/ours? {:mount.feature/_namespace [:mount.feature/name]} {:namespace/require 100}]
+    (let [tree (d/pull db '[:namespace/name :namespace/ours? {:mount.feature/_namespace [:mount.feature/name
+                                                                                         {:mount.feature/namespace [:namespace/name]}
+                                                                                         {:mount.feature/project [:project/name]}]} {:namespace/require 100}]
                        selected-namespace-id)]
-      (only-ours tree :namespace/require :namespace/ours?))))
+      tree)))
+
+(defn mount-state-tree [ns-tree]
+  (let [child-state-nodes (->> (:namespace/require ns-tree)
+                               (mapcat mount-state-tree)
+                               (filter :state-name))]
+    (if (:mount.feature/_namespace ns-tree) ;; if I'm a state node
+      [{:ns-name (:namespace/name ns-tree)
+        :project-name (-> ns-tree :mount.feature/_namespace first :mount.feature/project :project/name) 
+        :state-name (-> ns-tree :mount.feature/_namespace first :mount.feature/name)
+        :sub-states child-state-nodes}]
+      child-state-nodes)))
+
+(defn state-dependencies [ns-tree]
+  (let [deps (->> {:state-name :root :sub-states (mount-state-tree ns-tree)}
+             (tree-seq #(not-empty (:sub-states %)) :sub-states )
+             (reduce 
+              (fn [r {:keys [state-name sub-states] :as node}]
+                (update r (dissoc node :sub-states) (fn [d] (into (or d #{}) (map #(dissoc % :sub-states) sub-states)))))
+              {}))] 
+    (dissoc deps {:state-name :root})))
 
 (re-frame/reg-sub
  ::projecs-dependencies-edges
@@ -36,13 +59,25 @@
    (let [edge-node (fn [node]
                      {:namespace/name (:namespace/name node)
                       :mount-state (:mount.feature/_namespace node)})]
-    (->> (namespaces-tree db selected-namespace-id)
-         (tree-seq (comp not-empty :namespace/require) :namespace/require)
-         (mapcat (fn [{:keys [:namespace/require] :as ns-node}]
-                   (map (fn [dep-node]
-                          [(edge-node ns-node) (edge-node dep-node)])
-                        require))) 
-         (into #{})))))
+     (->> (only-ours (namespaces-tree db selected-namespace-id) :namespace/require :namespace/ours?)
+          (tree-seq (comp not-empty :namespace/require) :namespace/require)
+          (mapcat (fn [{:keys [:namespace/require] :as ns-node}]
+                    (map (fn [dep-node]
+                           [(edge-node ns-node) (edge-node dep-node)])
+                         require))) 
+          (into #{})))))
+
+(re-frame/reg-sub
+ ::mount-state-edges
+ (fn [{:keys [:datascript/db :selected-namespace-id]} _]
+   (->> (namespaces-tree db selected-namespace-id)
+        (state-dependencies)
+        (mapcat (fn [[s deps]]
+                  (if (empty? deps)
+                    [[s]]
+                    (map (fn [d] [s d])
+                         deps))))
+        (into #{}))))
 
 (re-frame/reg-sub
  ::all-projects
