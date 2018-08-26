@@ -48,5 +48,5 @@ For similar approach but around smart contracts analisys check [Smart View](http
 
 ### Roadmap
 - Index npm dependencies
-- Index more code facts to be able to create linterns
+- Index more code facts to be able to create lint tools
 
