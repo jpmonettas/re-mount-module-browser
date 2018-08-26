@@ -8,5 +8,7 @@
 (defn -main [& [folder]]
   (let [port (Integer/parseInt (or (env :port) "3000"))]
     (reset! core/projects-folder folder)
+    (println "Indexing " folder)
     (core/re-index-all)
-    (run-jetty handler {:port port :join? false})))
+    (run-jetty handler {:port port :join? false})
+    (println "Indexing done, open http://localhost:3000")))
