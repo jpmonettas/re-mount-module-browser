@@ -30,6 +30,9 @@ and then open http://localhost:3000
 #### Namespaces and mount state dependencies 
 <img src="/docs/namespaces.png?raw=true"/>
 
+#### Mount state dependencies 
+<img src="/docs/mount.png?raw=true"/>
+
 #### Re-frame events, subscriptions, effects and coeffects
 <img src="/docs/reframe.png?raw=true"/>
 
