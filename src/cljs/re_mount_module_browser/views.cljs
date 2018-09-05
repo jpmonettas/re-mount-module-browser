@@ -39,13 +39,24 @@
 (defn dependency-explorer []
   (let [edges (re-frame/subscribe [::subs/projecs-dependencies-edges])
         selected-project-id (re-frame/subscribe [::subs/selected-project-id])
+        selected-namespace-id (re-frame/subscribe [::subs/selected-namespace-id])
         graphviz (atom nil)
         redraw-graph (fn []
                        (let [eds @edges
                              all-nodes (into #{} (mapcat identity eds))]
+                         (.log js/console all-nodes)
                          (-> @graphviz
-                             (.renderDot (->> (map (fn [n] [n {:shape :rectangle :fontname :helvetica :fontsize 10}]) all-nodes)
-                                              (into eds)
+                             (.renderDot (->> all-nodes
+                                              (map (fn [{:keys [:project/name :painted?]}]
+                                                     [name (cond-> {:shape :rectangle
+                                                                    :fontname :helvetica
+                                                                    :fontsize 10}
+                                                             painted? (assoc :color :red
+                                                                            :label name))]))
+                                              (into (map (fn [[n1 n2]]
+                                                           [(:project/name n1)
+                                                            (:project/name n2)])
+                                                         eds))
                                               dorothy/digraph
                                               dorothy/dot)))))]
     (r/create-class
@@ -64,6 +75,9 @@
                          [all-projects
                           :on-change #(re-frame/dispatch [::events/select-project %])
                           :selected-id @selected-project-id]
+                         [all-project-namespaces
+                          :on-change #(re-frame/dispatch [::events/select-namespace %])
+                          :selected-id @selected-namespace-id]
                          [:div.tree-panel 
                           [:div#dependency-graph]]])})))
 
@@ -104,7 +118,7 @@
                              (redraw-graph))
       :component-did-update redraw-graph
       :reagent-render (fn []
-                        [:div.dependency-explorer {:style {:margin 10}}
+                        [:div.namespace-explorer {:style {:margin 10}}
                          [all-projects
                           :on-change #(re-frame/dispatch [::events/select-project %])
                           :selected-id @selected-project-id]

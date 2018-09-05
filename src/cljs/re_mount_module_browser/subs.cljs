@@ -8,19 +8,39 @@
                                  (filter ours-fn)
                                  (map #(only-ours % childs-key ours-fn))))))
 
-(defn dependency-tree [db selected-project-id]
-   (when selected-project-id
-     (let [tree (d/pull db '[:project/name :project/ours?  {:project/dependency 6}] selected-project-id)]
-       (only-ours tree :project/dependency :project/ours?))))
-
+(defn paint-tree [tree discriminator-key childs-key color-pred]
+  (-> tree
+      (assoc :painted? (color-pred (get tree discriminator-key)))
+      (update childs-key (fn [childs]
+                           (->> childs
+                               (map #(paint-tree % discriminator-key childs-key color-pred)))))))
 
 (defn namespaces-tree [db selected-namespace-id]
   (when selected-namespace-id
-    (let [tree (d/pull db '[:namespace/name :namespace/ours? {:mount.feature/_namespace [:mount.feature/name
-                                                                                         {:mount.feature/namespace [:namespace/name]}
-                                                                                         {:mount.feature/project [:project/name]}]} {:namespace/require 100}]
+    (let [tree (d/pull db '[:namespace/name
+                            :db/id
+                            :namespace/ours?
+                            {:mount.feature/_namespace [:mount.feature/name
+                                                        {:mount.feature/namespace [:namespace/name]}
+                                                        {:mount.feature/project [:project/name]}]}
+                            {:namespace/require 100}
+                            {:namespace/project [:project/name]}]
                        selected-namespace-id)]
       tree)))
+
+(defn dependency-tree [db selected-project-id selected-namespace-id]
+   (when selected-project-id
+     (let [tree (d/pull db '[:project/name :project/ours?  {:project/dependency 6}] selected-project-id)
+           deps-for-ns (->> (namespaces-tree db selected-namespace-id)
+                            (tree-seq (comp not-empty :namespace/require) :namespace/require)
+                            (keep #(-> % :namespace/project :project/name))
+                            (into #{}))]
+       (-> tree
+           (only-ours :project/dependency :project/ours?)
+           (paint-tree :project/name :project/dependency deps-for-ns)))))
+
+
+
 
 (defn mount-state-tree [ns-tree]
   (let [child-state-nodes (->> (:namespace/require ns-tree)
@@ -44,12 +64,12 @@
 
 (re-frame/reg-sub
  ::projecs-dependencies-edges
- (fn [{:keys [:datascript/db :selected-project-id]} _]
-   (->> (dependency-tree db selected-project-id)
+ (fn [{:keys [:datascript/db :selected-project-id :selected-namespace-id]} _]
+   (->> (dependency-tree db selected-project-id selected-namespace-id)
         (tree-seq (comp not-empty :project/dependency) :project/dependency )
-        (mapcat (fn [{:keys [:project/name :project/dependency]}]
+        (mapcat (fn [{:keys [:project/dependency] :as p}]
                   (map (fn [d]
-                         [name (:project/name d)])
+                         [p d])
                        dependency))) 
         (into #{}))))
 

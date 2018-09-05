@@ -162,32 +162,34 @@
 (defn transact-namespaces [conn all-projects]
   (println "--------- Indexing namespaces ---------")
   (let [db @conn
-        requires (fn [alias-map] (->> alias-map vals (into #{})))]
-    (doseq [{:keys [project-name cljs-files]} all-projects]
-      ;; this first pass is to generate all the ns ids for names before starting so we
-      ;; don't depend on ns order processing for creating dependecies
-      (let [all-namespaces (->> cljs-files
-                                (mapcat (fn [{:keys [ns-name alias-map]}]
-                                          (into [ns-name] (requires alias-map))))
-                                (into #{}))
-            ns-ids-by-name (->> all-namespaces
-                                (reduce (fn [r n]
-                                          (assoc r n (d/tempid :db.part/user)))
-                                        {}))
-            all-ns-facts (->> cljs-files
-                              (mapcat (fn [{:keys [ns-name absolute-path source-forms alias-map]}]
-                                        (when ns-name
-                                         (let [required-facts (mapcat (fn [required-ns]
-                                                                        [[:db/add (ns-ids-by-name ns-name) :namespace/require (ns-ids-by-name required-ns)]
-                                                                         [:db/add (ns-ids-by-name required-ns) :namespace/name (str required-ns)]])
-                                                                      (requires alias-map))
-                                               ns-facts (into [[:db/add (ns-ids-by-name ns-name) :namespace/name (str ns-name)]
-                                                               [:db/add (ns-ids-by-name ns-name) :namespace/path absolute-path]
-                                                               [:db/add (ns-ids-by-name ns-name) :namespace/project (:db/id (get-project-by-name db (str project-name)))]
-                                                               [:db/add (ns-ids-by-name ns-name) :namespace/ours? true]]
-                                                              required-facts)]
-                                           ns-facts)))))]
-        (d/transact! conn all-ns-facts)))))
+        requires (fn [alias-map] (->> alias-map vals (into #{})))
+        all-namespaces (->> all-projects
+                            (mapcat #(:cljs-files %))
+                            (mapcat (fn [{:keys [ns-name alias-map]}]
+                                      (into [(str ns-name)] (map str (requires alias-map)))))
+                            (into #{}))
+        ns-ids-by-name (->> all-namespaces
+                            (reduce (fn [r n]
+                                      (assoc r n (d/tempid :db.part/user)))
+                                    {}))
+        all-facts (->> all-projects
+                       (mapcat (fn [{:keys [project-name cljs-files]}]
+                                 (->> cljs-files
+                                      (mapcat (fn [{:keys [ns-name absolute-path source-forms alias-map]}]
+                                                (when ns-name
+                                                  (let [ns-name (str ns-name)
+                                                        required-facts (mapcat (fn [required-ns]
+                                                                                 (let [required-ns (str required-ns)]
+                                                                                   [[:db/add (ns-ids-by-name ns-name) :namespace/require (ns-ids-by-name required-ns)]
+                                                                                    [:db/add (ns-ids-by-name required-ns) :namespace/name required-ns]]))
+                                                                               (requires alias-map))
+                                                        ns-facts (into [[:db/add (ns-ids-by-name ns-name) :namespace/name ns-name]
+                                                                        [:db/add (ns-ids-by-name ns-name) :namespace/path absolute-path]
+                                                                        [:db/add (ns-ids-by-name ns-name) :namespace/project (:db/id (get-project-by-name db (str project-name)))]
+                                                                        [:db/add (ns-ids-by-name ns-name) :namespace/ours? true]]
+                                                                       required-facts)]
+                                                    ns-facts))))))))]
+    (d/transact! conn all-facts)))
 
 (defn get-namespace-by-name [db namespace-name]
   (d/entity db (d/q '[:find ?nid .
